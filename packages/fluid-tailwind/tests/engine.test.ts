@@ -159,9 +159,11 @@ describe('fl-p (dynamic spacing scale)', () => {
 		expect(nows(css)).toContain(nows(`padding:${clampStr('1', '1', '1', '2')}`));
 	});
 
-	it('handles the -fl-p-3/5 negative in canonical dash-first form', async () => {
-		const css = await run(['-fl-p-3/5']);
-		expect(css).toContain('.-fl-p-3\\/5');
+	it('handles the -fl-m-3/5 negative in canonical dash-first form', async () => {
+		// Margin (not padding) carries the negative — padding has no core negative,
+		// so `fl-p` is registered non-negative per PLAN's negative policy.
+		const css = await run(['-fl-m-3/5']);
+		expect(css).toContain('.-fl-m-3\\/5');
 		// both endpoints negative: -0.75rem .. -1.25rem, slope -0.5
 		expect(nows(css)).toContain(nows(clampStr('-1.25', '-0.75', '-0.5', '-0.75')));
 	});
@@ -241,15 +243,19 @@ describe('review finding 1 — unit policy (rem-resolvable only)', () => {
 });
 
 describe('review finding 2 — negative zero ranges', () => {
-	it('-fl-p-0/3 stays negative (0 → -0.75rem)', async () => {
-		const css = await run(['-fl-p-0/3']);
-		expect(css).toContain('.-fl-p-0\\/3');
+	// The reviewer's example was `-fl-p-0/3`, from M1 when `fl-p` was the only
+	// (incorrectly negative-capable) root. Padding has no core negative, so the
+	// identical negative-zero mechanism is verified on `fl-m`; the fix is
+	// root-agnostic (structural `isNegated`, not a numeric sign check).
+	it('-fl-m-0/3 stays negative (0 → -0.75rem)', async () => {
+		const css = await run(['-fl-m-0/3']);
+		expect(css).toContain('.-fl-m-0\\/3');
 		// 0rem → -0.75rem, slope -0.75, clamp bounds swapped.
 		expect(nows(css)).toContain(nows(clampStr('-0.75', '0', '-0.75', '0')));
 	});
 
-	it('-fl-p-0/0 is a no-change error, not a silent positive', async () => {
-		const css = await run(['-fl-p-0/0']);
+	it('-fl-m-0/0 is a no-change error, not a silent positive', async () => {
+		const css = await run(['-fl-m-0/0']);
 		expect(css).toContain('--tw-fl-error');
 		expect(css).toContain('no-change');
 	});

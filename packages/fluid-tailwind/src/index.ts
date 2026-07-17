@@ -1,7 +1,8 @@
 import plugin from 'tailwindcss/plugin';
 import { Length } from './css';
+import { ROOTS } from './roots';
 import { remNumber, resolveTheme } from './theme';
-import { registerRoot, type UtilityRoot } from './utilities';
+import { registerRoot } from './utilities';
 import { registerVariants } from './variants';
 
 /** Flat `@plugin "…" { … }` option block (all values arrive as strings). */
@@ -11,16 +12,6 @@ export interface FluidOptions {
 	/** Accepted and stored now; the WCAG 1.4.4 check it gates lands in M4. */
 	checkSC144?: boolean;
 }
-
-/**
- * The M1 root set: the two hardest utilities. `fl-p` exercises the dynamic
- * spacing scale; `fl-text` exercises font-size tuple interpolation. M2 extends
- * this list to the full ~30 length-accepting roots — additive, no handler churn.
- */
-const ROOTS: UtilityRoot[] = [
-	{ root: 'fl-p', kind: 'length', properties: ['padding'], negative: true },
-	{ root: 'fl-text', kind: 'font-size' },
-];
 
 // Explicit alias (expressed via the `plugin` import) avoids TS2742: tailwindcss
 // doesn't export `PluginWithOptions`, so the inferred default-export type can't be

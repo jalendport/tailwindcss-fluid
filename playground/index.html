@@ -12,8 +12,19 @@
 		<!-- (6) clamp math on font-size, default viewport range -->
 		<h1 id="viewport-type" class="fl-text-sm/xl">Fluid viewport type</h1>
 
-		<!-- negatives -->
-		<p class="-fl-p-3/5">Negative fluid padding</p>
+		<!-- M2 sampling of the full root list across scale families -->
+		<!-- spacing family (+ negative margin — padding has no core negative) -->
+		<div class="fl-p-4/8 fl-mx-2/6 -fl-mt-3/5 fl-gap-2/6 fl-space-x-2/6">spacing</div>
+		<!-- sizing -->
+		<div class="fl-w-16/32 fl-h-8/16 fl-size-4/8 fl-max-w-24/48 fl-basis-8/16">sizing</div>
+		<!-- type -->
+		<div class="fl-leading-4/8 fl-indent-2/6 fl-tracking-[0.01rem]/[0.04rem]">type</div>
+		<!-- decoration -->
+		<div class="fl-rounded-lg/2xl fl-border-2/8 fl-outline-2/4 fl-ring-2/4">decoration</div>
+		<!-- transform -->
+		<div class="-fl-translate-x-2/6 fl-translate-y-1/4">transform</div>
+		<!-- arbitrary values + px fold -->
+		<div class="fl-p-[16px]/[2rem] fl-m-[0.5rem]/[1.5rem]">arbitrary</div>
 
 		<!-- (3) viewport range variants -->
 		<div class="fl-md/lg:fl-text-sm/xl">range md→lg</div>
