@@ -22,12 +22,14 @@
 //     when it actually compiles to one. `fl-p-4/foo` emits only a `--tw-fl-error`
 //     (bad end value), and `fl-text-sm/5xl` emits no `font-size` under the default
 //     SC 1.4.4 check. Grouping either would DELETE a real fallback (`p-2`,
-//     `text-lg`) that renders. So we rewrite only when BOTH the start and the end
-//     channel validate against the same core class group (using tailwind-merge's
-//     own static knowledge, via a probe merge), and for `fl-text` only when the
-//     named default-scale pair also passes the SC 1.4.4 check for the configured
-//     range. Anything unproven is left ungrouped → it merges with nothing and
-//     deletes nothing.
+//     `text-lg`) that renders. The gate encodes the PLUGIN's knowledge, not just
+//     core's — a pair is grouped only when every check below passes (see
+//     `canGroup`): the root is on the plugin's static allowlist (`roots.ts`); the
+//     endpoints aren't identical (`no-change`); any arbitrary endpoint folds to a
+//     literal rem/px length; `fl-text` isn't an unsupported arbitrary form and a
+//     named `fl-text` pair passes SC 1.4.4 for the configured range/scale; and BOTH
+//     channels are real classes in one core group (a probe merge). Anything
+//     unproven is left ungrouped → it merges with nothing and deletes nothing.
 //
 //  2. RANGE VARIANTS ARE ORDER-SENSITIVE. `hover:fl-md/lg:…` scopes the range to
 //     hover; `fl-md/lg:hover:…` installs it unconditionally — they are NOT
@@ -39,6 +41,7 @@
 //     class text is the untouched original.
 
 import { createTailwindMerge, mergeConfigs, type Config } from 'tailwind-merge';
+import { FLUID_ROOTS } from './roots';
 import { DEFAULT_TEXT_SCALE, passesSC144 } from './sc144';
 
 /** Options mirroring the plugin's, so the merge check matches the plugin's reality. */
@@ -54,6 +57,15 @@ export interface WithFluidOptions {
 	minScreen?: string;
 	/** Range end for the SC 1.4.4 gate (default `96rem` — stock largest breakpoint). */
 	maxScreen?: string;
+	/**
+	 * Custom `--text-*` scale, so the SC 1.4.4 gate reflects a non-default theme.
+	 * Keys are size names (`sm`, `xl`, …); values are rem lengths (`'0.5rem'`) or
+	 * unitless rem numbers (`0.5`). Merged over the bundled default scale, so only
+	 * the overridden sizes change. Set this to match a plugin whose `--text-*` theme
+	 * differs from Tailwind's default, or the merge may keep (or drop) a `fl-text`
+	 * pair against the wrong sizes.
+	 */
+	textScale?: Record<string, string | number>;
 }
 
 /** Matches an optionally-negated fluid base class: `fl-…` or `-fl-…`. */
@@ -62,14 +74,48 @@ const FLUID_BASE = /^(-?)fl-(.+)$/;
 /** Matches a `fl-…`/`@fl-…` range VARIANT (a modifier), incl. bare `fl`/`@fl`. */
 const FLUID_MODIFIER = /^@?fl(?:[-/].*)?$/;
 
+/** A rem/px length (or unit-free zero), case-insensitive — the plugin's foldable form. */
+const REM_PX_LENGTH = /^\s*([+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(rem|px)?\s*$/i;
+
 /** Parse a rem/px length option to a unitless rem number (16px/rem); null if unusable. */
-function remOption(raw: string | undefined, fallback: number): number {
-	if (!raw) return fallback;
-	const m = /^\s*([+-]?[0-9]*\.?[0-9]+)(rem|px)?\s*$/i.exec(raw);
+function remOption(raw: string | number | undefined, fallback: number): number {
+	if (raw == null) return fallback;
+	if (typeof raw === 'number') return isNaN(raw) ? fallback : raw;
+	const m = REM_PX_LENGTH.exec(raw);
 	if (!m) return fallback;
 	const n = parseFloat(m[1]!);
 	if (isNaN(n)) return fallback;
 	return (m[2]?.toLowerCase() ?? 'rem') === 'px' ? n / 16 : n;
+}
+
+/** Whether an arbitrary value (`[…]` stripped) folds to a literal rem/px length. */
+function isFoldableLength(inner: string): boolean {
+	const m = REM_PX_LENGTH.exec(inner);
+	if (!m) return false;
+	const n = parseFloat(m[1]!);
+	if (isNaN(n)) return false;
+	// The plugin's `toRem` only keeps rem, px, and a unit-free zero; every other
+	// unit raises `unsupported-unit` and emits no property. Mirror that exactly.
+	return n === 0 || m[2] != null;
+}
+
+/** Whether a value channel is a Tailwind arbitrary value (`[…]`). */
+const isArbitrary = (value: string): boolean => value.startsWith('[') && value.endsWith(']');
+
+/**
+ * Resolve the SC 1.4.4 text scale: the bundled default overlaid with any custom
+ * `textScale` option (rem strings or unitless rem numbers). A value that can't be
+ * read as a rem/px length is dropped, so an unusable override falls back to the
+ * default for that size rather than corrupting the gate.
+ */
+function resolveTextScale(custom: WithFluidOptions['textScale']): Record<string, number> {
+	if (!custom) return DEFAULT_TEXT_SCALE;
+	const scale: Record<string, number> = { ...DEFAULT_TEXT_SCALE };
+	for (const [name, raw] of Object.entries(custom)) {
+		const n = remOption(raw, NaN);
+		if (!isNaN(n)) scale[name] = n;
+	}
+	return scale;
 }
 
 interface FluidAnalysis {
@@ -145,15 +191,23 @@ export function withFluid<
 	const checkSC144 = options.checkSC144 !== false;
 	const minScreen = remOption(options.minScreen, 40);
 	const maxScreen = remOption(options.maxScreen, 96);
+	const textScale = resolveTextScale(options.textScale);
 
 	// A core-only merge built from the SAME config, used purely as a validity/group
 	// oracle: `probe('p-4 p-8') === 'p-8'` (single token) proves both are real
 	// classes in one conflict group. This uses tailwind-merge's own static knowledge
 	// without needing its non-exported class-group internals. The config passed here
 	// predates our extension, so there's no recursion.
+	//
+	// Prefix regression fix: when the config carries a `prefix`, tailwind-merge strips
+	// it before `experimentalParseClassName` runs, so the parsed bases we probe with
+	// (`p-4`, `p-8`) are unprefixed — but this core oracle, built from the same
+	// prefixed config, only recognizes PREFIXED classes. Re-apply the prefix to each
+	// probe so a valid prefixed pair (`tw:fl-p-4/8`) still classifies as one group.
 	const coreMerge = createTailwindMerge(() => config);
+	const px = config.prefix ? config.prefix + ':' : '';
 	const probeMergesToOne = (a: string, b: string): boolean => {
-		const out = coreMerge(`${a} ${b}`);
+		const out = coreMerge(`${px}${a} ${px}${b}`);
 		return out.length > 0 && !/\s/.test(out);
 	};
 
@@ -185,18 +239,51 @@ export function withFluid<
 		},
 	}) as Config<ClassGroupIds, ThemeGroupIds>;
 
-	/** Whether this fluid pair is safe to cross-merge (compiles to its core property). */
+	/**
+	 * Whether this fluid pair is safe to cross-merge — i.e. the plugin PROVABLY emits
+	 * its advertised core property for it. Each gate below mirrors a way the plugin
+	 * emits nothing (only a `--tw-fl-error`), which grouping would silently turn into
+	 * "delete the real class this displaces". Called only for slash pairs (`endCore`
+	 * and `endValue` are non-null).
+	 */
 	function canGroup(a: FluidAnalysis): boolean {
-		// `fl-text`: the plugin emits NO font-size when the pair fails SC 1.4.4, so a
-		// failing pair must not displace a real font-size. Only named default-scale
-		// pairs can be checked statically; an unknown size can't be proven safe.
+		const endValue = a.endValue!;
+
+		// 1. Root allowlist. The plugin's supported surface is static; a root it never
+		//    registers (`fl-opacity`, a custom `fl-widget`) emits no property. Runs
+		//    first, so unknown roots — including any reachable only through a custom
+		//    tailwind-merge class group — are never grouped.
+		if (!FLUID_ROOTS.has(a.root)) return false;
+
+		// 2. No-change. Identical endpoints in the same channel form (`fl-p-4/4`,
+		//    `fl-p-[1rem]/[1rem]`) fold to `no-change` — the plugin emits no property.
+		if (a.startValue === endValue) return false;
+
+		const startArb = isArbitrary(a.startValue);
+		const endArb = isArbitrary(endValue);
+
+		// 3. `fl-text` arbitrary forms. The plugin supports no arbitrary font-size pair
+		//    (`fl-text-[1rem]/[2rem]` resolves neither endpoint to a text key, so no
+		//    font-size is emitted) — never group, regardless of the SC 1.4.4 gate.
+		if (a.root === 'text' && (startArb || endArb)) return false;
+
+		// 4. Arbitrary endpoints must fold to a literal rem/px length (or unit-free
+		//    zero). `[1em]`, `[url(x)]`, and junk raise `unsupported-unit`/`non-length`
+		//    and emit no property; mixed px/rem folds and is fine.
+		if (startArb && !isFoldableLength(a.startValue.slice(1, -1))) return false;
+		if (endArb && !isFoldableLength(endValue.slice(1, -1))) return false;
+
+		// 5. `fl-text` SC 1.4.4. The plugin emits NO font-size when a named pair fails
+		//    the zoom-safety check, so a failing pair must not displace a real
+		//    font-size. Evaluated against the (optionally custom) text scale + range.
 		if (checkSC144 && a.root === 'text') {
-			const start = DEFAULT_TEXT_SCALE[a.startValue];
-			const end = a.endValue != null ? DEFAULT_TEXT_SCALE[a.endValue] : undefined;
+			const start = textScale[a.startValue];
+			const end = textScale[endValue];
 			if (start === undefined || end === undefined) return false;
 			if (!passesSC144(start, end, minScreen, maxScreen)) return false;
 		}
-		// Both channels must be real classes in the same core group.
+
+		// 6. Both channels must be real classes in the same core conflict group.
 		return probeMergesToOne(a.startCore, a.endCore!);
 	}
 }

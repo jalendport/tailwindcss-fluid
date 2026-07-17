@@ -4,6 +4,7 @@ import { withFluid } from '../src/index';
 
 const twMerge = extendTailwindMerge(withFluid);
 const twMergeNoSC144 = extendTailwindMerge((config) => withFluid(config, { checkSC144: false }));
+const twMergePrefixed = extendTailwindMerge({ prefix: 'tw' }, withFluid);
 
 describe('fluid utilities merge last-wins among themselves', () => {
 	it('two fluid font sizes → last wins', () => {
@@ -128,6 +129,77 @@ describe('validate before grouping — never delete a class that renders (findin
 
 	it('an arbitrary length pair merges when both ends validate', () => {
 		expect(twMerge('p-4 fl-p-[1rem]/[2rem]')).toBe('fl-p-[1rem]/[2rem]');
+	});
+});
+
+describe('the gate encodes the plugin surface, not just core (M7 fix 1)', () => {
+	it('a no-change pair stays ungrouped (both kept)', () => {
+		// `fl-p-4/4` folds to `no-change` — the plugin emits no padding.
+		expect(twMerge('p-2 fl-p-4/4')).toBe('p-2 fl-p-4/4');
+		expect(twMerge('p-2 fl-p-[1rem]/[1rem]')).toBe('p-2 fl-p-[1rem]/[1rem]');
+	});
+
+	it('non-rem/px arbitrary endpoints stay ungrouped (both kept)', () => {
+		// `[1em]`/`[2em]` raise `unsupported-unit`; no padding is emitted.
+		expect(twMerge('p-2 fl-p-[1em]/[2em]')).toBe('p-2 fl-p-[1em]/[2em]');
+	});
+
+	it('a non-length arbitrary endpoint stays ungrouped (both kept)', () => {
+		expect(twMerge('p-2 fl-p-[url(x)]/4')).toBe('p-2 fl-p-[url(x)]/4');
+		expect(twMerge('p-2 fl-p-4/[url(x)]')).toBe('p-2 fl-p-4/[url(x)]');
+	});
+
+	it('mixed px/rem arbitrary endpoints fold and DO group', () => {
+		expect(twMerge('p-2 fl-p-[16px]/[2rem]')).toBe('fl-p-[16px]/[2rem]');
+	});
+
+	it('an unsupported root stays ungrouped (both kept)', () => {
+		// `fl-opacity` is not a plugin root — even though core has an `opacity` group.
+		expect(twMerge('opacity-25 fl-opacity-50/75')).toBe('opacity-25 fl-opacity-50/75');
+	});
+
+	it('a custom class group reachable only through the oracle stays ungrouped', () => {
+		// A user-added `widget-a/widget-b` group would let the oracle merge the pair,
+		// but `fl-widget` is not a plugin root, so the allowlist refuses it first.
+		const tw = extendTailwindMerge(
+			{ extend: { classGroups: { widget: [{ widget: ['a', 'b'] }] } } },
+			withFluid,
+		);
+		expect(tw('widget-a fl-widget-a/b')).toBe('widget-a fl-widget-a/b');
+	});
+
+	it('an arbitrary fl-text pair never groups, even with the SC check off', () => {
+		// The plugin supports no arbitrary font-size pair at all.
+		expect(twMergeNoSC144('text-lg fl-text-[1rem]/[2rem]')).toBe(
+			'text-lg fl-text-[1rem]/[2rem]',
+		);
+	});
+});
+
+describe('custom textScale realigns the SC 1.4.4 gate (M7 fix 1)', () => {
+	it('a custom scale that makes a named pair fail keeps both classes', () => {
+		// With `--text-sm: 0.5rem; --text-xl: 4rem`, the plugin rejects `fl-text-sm/xl`
+		// (fails SC 1.4.4) and emits no font-size — so it must not delete `text-lg`.
+		const tw = extendTailwindMerge((config) =>
+			withFluid(config, { textScale: { sm: '0.5rem', xl: 4 } }),
+		);
+		expect(tw('text-lg fl-text-sm/xl')).toBe('text-lg fl-text-sm/xl');
+		// The default scale still groups the same pair (it passes there).
+		expect(twMerge('text-lg fl-text-sm/xl')).toBe('fl-text-sm/xl');
+	});
+});
+
+describe('prefix-configured cross-merging (M7 fix 1)', () => {
+	it('a valid prefixed fluid/core pair cross-merges', () => {
+		expect(twMergePrefixed('tw:p-2 tw:fl-p-4/8')).toBe('tw:fl-p-4/8');
+	});
+
+	it('an invalid prefixed pair keeps both (conservative)', () => {
+		expect(twMergePrefixed('tw:p-2 tw:fl-p-4/foo')).toBe('tw:p-2 tw:fl-p-4/foo');
+	});
+
+	it('prefixed fluid utilities still merge last-wins among themselves', () => {
+		expect(twMergePrefixed('tw:fl-p-4/8 tw:fl-p-2/6')).toBe('tw:fl-p-2/6');
 	});
 });
 

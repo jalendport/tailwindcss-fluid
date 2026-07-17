@@ -244,11 +244,14 @@ const twMerge = extendTailwindMerge((config) =>
 		checkSC144: false, // skip the SC 1.4.4 gate entirely (match `@plugin { checkSC144: false }`)
 		minScreen: '20rem', // range start for the gate (default 40rem)
 		maxScreen: '80rem', // range end for the gate   (default 96rem)
+		textScale: { sm: '0.5rem', xl: 4 }, // custom --text-* sizes (rem string or number)
 	}),
 );
 ```
 
-The gate evaluates named default-scale font sizes against the default `40rem`→`96rem` range. A custom `--text-*` scale or `--breakpoint-*` range shifts what the plugin actually emits; `minScreen`/`maxScreen` (and `checkSC144: false`) exist to realign the merge check with that reality.
+The gate evaluates named font sizes against the default `40rem`→`96rem` range and Tailwind's default `--text-*` scale. A custom `--text-*` scale or `--breakpoint-*` range shifts what the plugin actually emits; `minScreen`/`maxScreen`, `textScale` (rem lengths or unitless rem numbers, merged over the default scale), and `checkSC144: false` exist to realign the merge check with that reality.
+
+Only a fluid class whose root the plugin actually supports is ever grouped — the companion bundles the plugin's root surface (a static allowlist kept in sync by a test), so an unknown root (`fl-opacity-50/75`, a custom class group) is never merged. A `no-change` pair (`fl-p-4/4`), a non-rem/px arbitrary endpoint (`fl-p-[1em]/[2em]`, `fl-p-[url(x)]/4`), and any arbitrary `fl-text` pair are likewise left alone, since the plugin emits no property for them.
 
 ## Migrating from fluid-tailwind (v3)
 
