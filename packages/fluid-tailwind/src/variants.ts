@@ -71,6 +71,17 @@ function resolveEnd(modifier: string | null | undefined, channel: Channel): numb
 	return remNumber(len); // may throw unsupported-unit
 }
 
+// ⚠ VARIANT-ORDER SEMANTIC (review finding 4) — pinned, not fixable in v4.
+// The range vars are injected beside `@slot` at the nesting level this variant
+// occupies, and v4's variant API gives no hook to lift them into an inner
+// state/media wrapper. So order matters and is a documented grammar rule:
+//   hover:fl-md/lg:…  → vars nest INSIDE the :hover rule  → range scoped to hover ✅
+//   fl-md/lg:hover:…  → vars land in the BASE rule (outside :hover) → the element's
+//                       range is retuned UNCONDITIONALLY (every fluid utility on it),
+//                       not just while hovered ⚠️
+// README rule (M5): put the range variant AFTER (inner to) the state/media variant
+// when the range should be scoped to that state. Asserted both ways in
+// tests/variants.test.ts › "variant order semantics".
 /** Build the injected declaration string, surfacing any FluidError as `--tw-fl-error`. */
 function inject(channel: Channel, value: string, modifier: string | null | undefined): string {
 	try {

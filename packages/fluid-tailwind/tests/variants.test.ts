@@ -162,6 +162,47 @@ describe('stacking with core variants', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Variant ORDER semantics (review finding 4). A range variant injects its range
+// vars beside `@slot` at whatever nesting level it sits. v4's variant API offers
+// no way to lift them into an inner state/media wrapper, so ORDER is significant
+// and this is a PINNED GRAMMAR RULE, not a fixable bug:
+//
+//   ✅ hover:fl-md/lg:…  — range scoped to :hover (vars nest inside the wrapper)
+//   ⚠️ fl-md/lg:hover:…  — range applies UNCONDITIONALLY (vars land in the base
+//                          rule, outside :hover), retuning the whole element even
+//                          when it isn't hovered.
+//
+// Rule for the M5 README: range variants must come AFTER (inner to) state/media
+// variants when the range should be scoped to that state. Both orders are asserted
+// below so the semantic is explicit, not accidental.
+// ---------------------------------------------------------------------------
+describe('variant order semantics (finding 4 — pinned, not fixable in v4)', () => {
+	it('hover:fl-md/lg: scopes the range vars INSIDE the hover wrapper', async () => {
+		const css = await run(['hover:fl-md/lg:fl-text-sm/xl']);
+		expect(css).toContain('@media (hover: hover)');
+		// The range vars and the font-size live together inside the :hover rule.
+		const hoverBlock = nows(css.split('@media (hover: hover)')[1] ?? '');
+		expect(hoverBlock).toContain(':hover{--fl-bp-min:48;--fl-bp-max:64');
+		expect(hoverBlock).toContain('font-size:clamp(');
+	});
+
+	it('fl-md/lg:hover: leaks the range vars into the UNCONDITIONAL base rule', async () => {
+		const css = await run(['fl-md/lg:hover:fl-text-sm/xl']);
+		const u = nows(utils(css));
+		// The base (non-hover) rule carries the range vars — active even un-hovered.
+		expect(u).toMatch(
+			/\.fl-md\\\/lg\\:hover\\:fl-text-sm\\\/xl\{--fl-bp-min:48;--fl-bp-max:64/,
+		);
+		// The font-size is gated behind the hover media query, but the range is not.
+		expect(css).toContain('@media (hover: hover)');
+		const hoverBlock = nows(css.split('@media (hover: hover)')[1] ?? '');
+		expect(hoverBlock).toContain('font-size:clamp(');
+		// Critically: the hover block does NOT re-declare the range (it's in the base).
+		expect(hoverBlock).not.toContain('--fl-bp-min:48');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Element-scope semantic (compile side; the browser proof lives in the
 // playground e2e — see verify-clamp.mjs containment + last-wins cases).
 // ---------------------------------------------------------------------------

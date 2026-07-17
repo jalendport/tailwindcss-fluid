@@ -66,26 +66,122 @@ describe('scale families — one thorough root each', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Emission hooks (roots that need more than a flat property list).
+// Emission hooks — core PARITY / COMPOSITION (review findings 1-3, 5). These
+// compile core utilities through the same harness and assert the fluid roots
+// behave like core, not just that a declaration is present.
 // ---------------------------------------------------------------------------
-describe('emission hooks', () => {
-	it('space-x emits margin on non-last children with the reverse var', async () => {
+
+/** Grab the body of the first rule whose selector contains `needle`. */
+const rule = (css: string, needle: string): string => {
+	const i = css.indexOf(needle);
+	if (i === -1) return '';
+	const open = css.indexOf('{', i);
+	const close = css.indexOf('}', open);
+	return css.slice(open + 1, close);
+};
+
+describe('finding 3 — space-x/y reverse specificity parity', () => {
+	it('emits the child rule at ZERO specificity (:where), like core', async () => {
 		const css = await run(['fl-space-x-2/6']);
-		expect(css).toContain('.fl-space-x-2\\/6 > :not(:last-child)');
-		expect(css).toContain('--tw-space-x-reverse: 0');
-		expect(nows(css)).toContain('margin-inline-start:calc(');
+		// Core wraps the child selector in :where(...) so it adds no specificity; the
+		// old plain `.fl-space-x-2\/6 > :not(:last-child)` out-specified core's reverse.
+		expect(css).toContain(':where(.fl-space-x-2\\/6 > :not(:last-child))');
+		expect(css).not.toMatch(/(?<!:where\()\.fl-space-x-2\\\/6 > :not\(:last-child\)/);
 	});
 
+	it('space-x-reverse can win over fluid spacing (same zero specificity → later wins)', async () => {
+		const css = await run(['fl-space-x-2/6', 'space-x-reverse']);
+		// Both rules must be zero-specificity :where() wrappers so the cascade order
+		// (core sorts space-x-reverse AFTER space-x-*) lets the reverse flip the var.
+		const fluid = css.indexOf(':where(.fl-space-x-2\\/6 > :not(:last-child))');
+		const reverse = css.indexOf(':where(.space-x-reverse > :not(:last-child))');
+		expect(fluid).toBeGreaterThan(-1);
+		expect(reverse).toBeGreaterThan(-1);
+		// The reverse rule (setting --tw-space-x-reverse:1) sorts after the fluid rule.
+		expect(reverse).toBeGreaterThan(fluid);
+		expect(rule(css, ':where(.space-x-reverse')).toContain('--tw-space-x-reverse: 1');
+	});
+});
+
+describe('finding 2 — ring composition parity', () => {
+	it('spread includes --tw-ring-offset-width and box-shadow is the full 5-layer stack', async () => {
+		const css = await run(['fl-ring-2/4']);
+		const body = rule(css, '.fl-ring-2\\/4');
+		// Ring spread must add the offset width (so ring-offset-* widens the ring).
+		expect(nows(body)).toContain(nows('+ var(--tw-ring-offset-width'));
+		// Full core five-layer stack, in order.
+		expect(nows(body)).toContain(nows('box-shadow: var(--tw-inset-shadow'));
+		for (const layer of [
+			'--tw-inset-shadow',
+			'--tw-inset-ring-shadow',
+			'--tw-ring-offset-shadow',
+			'--tw-ring-shadow',
+			'--tw-shadow',
+		]) {
+			expect(body).toContain(layer);
+		}
+	});
+
+	it('composes with ring-offset-2, shadow-lg, inset-shadow-sm without stomping layers', async () => {
+		const css = await run(['fl-ring-2/4', 'ring-offset-2', 'shadow-lg', 'inset-shadow-sm']);
+		// The core utilities still set their own layer vars…
+		expect(rule(css, '.ring-offset-2')).toContain('--tw-ring-offset-width: 2px');
+		expect(rule(css, '.shadow-lg')).toContain('--tw-shadow:');
+		expect(rule(css, '.inset-shadow-sm')).toContain('--tw-inset-shadow:');
+		// …and the fluid ring's box-shadow references all of them, so nothing is dropped.
+		const body = rule(css, '.fl-ring-2\\/4');
+		expect(body).toContain('--tw-inset-shadow');
+		expect(body).toContain('--tw-ring-offset-shadow');
+		expect(body).toContain('--tw-shadow');
+	});
+});
+
+describe('finding 1 — border/outline style parity', () => {
+	it('fl-border-* emits the matching border-style var for its side, like core', async () => {
+		const css = await run([
+			'fl-border-2/4',
+			'fl-border-x-2/4',
+			'fl-border-y-2/4',
+			'fl-border-s-2/4',
+			'fl-border-t-2/4',
+		]);
+		// Core border-width utilities emit `<side>-style: var(--tw-border-style)` + width.
+		expect(rule(css, '.fl-border-2\\/4')).toContain('border-style: var(--tw-border-style');
+		expect(rule(css, '.fl-border-x-2\\/4')).toContain(
+			'border-inline-style: var(--tw-border-style',
+		);
+		expect(rule(css, '.fl-border-y-2\\/4')).toContain(
+			'border-block-style: var(--tw-border-style',
+		);
+		expect(rule(css, '.fl-border-s-2\\/4')).toContain(
+			'border-inline-start-style: var(--tw-border-style',
+		);
+		expect(rule(css, '.fl-border-t-2\\/4')).toContain(
+			'border-top-style: var(--tw-border-style',
+		);
+	});
+
+	it('fl-border style declaration matches core border-2 (minus the width value)', async () => {
+		const fluid = await run(['fl-border-2/4']);
+		const core = await run(['border-2']);
+		// Both must carry the border-style declaration; core relies on @property default,
+		// the fluid root inlines `solid` so it also renders standalone.
+		expect(rule(fluid, '.fl-border-2\\/4')).toContain('border-style: var(--tw-border-style');
+		expect(rule(core, '.border-2')).toContain('border-style: var(--tw-border-style)');
+	});
+
+	it('fl-outline emits outline-style var like core outline-2', async () => {
+		const css = await run(['fl-outline-2/4']);
+		expect(rule(css, '.fl-outline-2\\/4')).toContain('outline-style: var(--tw-outline-style');
+		expect(nows(rule(css, '.fl-outline-2\\/4'))).toContain('outline-width:clamp(');
+	});
+});
+
+describe('emission hooks — structural smoke', () => {
 	it('translate-x sets the transform var and drives the shorthand', async () => {
 		const css = await run(['fl-translate-x-2/6']);
 		expect(nows(css)).toContain('--tw-translate-x:clamp(');
 		expect(css).toContain('translate: var(--tw-translate-x,0) var(--tw-translate-y,0)');
-	});
-
-	it('ring emits the ring-shadow layer', async () => {
-		const css = await run(['fl-ring-2/4']);
-		expect(nows(css)).toContain('--tw-ring-shadow:');
-		expect(css).toContain('box-shadow:');
 	});
 });
 

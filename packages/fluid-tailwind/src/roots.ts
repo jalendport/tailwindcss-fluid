@@ -12,14 +12,22 @@ import type { Emitter, UtilityRoot } from './utilities';
 
 // --- Emission hooks for roots that need more than a flat property list ---------
 
-/** `space-x`/`space-y`: margin on all-but-last child, honoring the reverse var. */
+/**
+ * `space-x`/`space-y`: margin on all-but-last child, honoring the reverse var.
+ *
+ * The child rule is wrapped in `:where(…)` so it carries ZERO added specificity,
+ * exactly like core's `:where(.space-x-4 > :not(:last-child))` (review finding 3).
+ * Without it the plain `.fl-space-x-2\/6 > :not(:last-child)` selector out-specifies
+ * core's `:where(.space-x-reverse > :not(:last-child))`, so `--tw-space-x-reverse: 0`
+ * always won and `space-x-reverse` could never flip fluid spacing.
+ */
 const space = (axis: 'x' | 'y'): Emitter => {
 	const [reverse, startProp, endProp] =
 		axis === 'x'
 			? ['--tw-space-x-reverse', 'margin-inline-start', 'margin-inline-end']
 			: ['--tw-space-y-reverse', 'margin-block-start', 'margin-block-end'];
 	return (clamp) => ({
-		'& > :not(:last-child)': {
+		':where(& > :not(:last-child))': {
 			[reverse]: '0',
 			[startProp]: `calc(${clamp} * var(${reverse}))`,
 			[endProp]: `calc(${clamp} * calc(1 - var(${reverse})))`,
@@ -37,11 +45,55 @@ const translate = (axis: 'x' | 'y'): Emitter => {
 	});
 };
 
-/** `ring`: fluid ring width via the ring-shadow layer, self-contained via fallbacks. */
+/**
+ * `ring`: fluid ring width mirroring core's ring emitter (review finding 2).
+ *
+ * Two parity points core relies on:
+ *   • the ring spread is `calc(<width> + var(--tw-ring-offset-width))`, so
+ *     `ring-offset-*` widens the outer ring, not just the offset shadow;
+ *   • the full FIVE-layer core `box-shadow` stack (`--tw-inset-shadow`,
+ *     `--tw-inset-ring-shadow`, `--tw-ring-offset-shadow`, `--tw-ring-shadow`,
+ *     `--tw-shadow`) so combining with inset-shadow / inset-ring / shadow doesn't
+ *     stomp those layers.
+ *
+ * Core references these vars bare and leans on its own `@property` base-layer
+ * defaults (`--tw-ring-offset-width: 0px`, the shadow layers `0 0 #0000`). Using
+ * `fl-ring` standalone (no core ring utility) wouldn't emit those registrations, so
+ * we keep inline fallbacks matching core's initial-values — harmless when a core
+ * utility sets the var (the set value wins), correct when it doesn't. This composes
+ * with core's own registrations; see m4-results.
+ */
 const ring: Emitter = (clamp) => ({
-	'--tw-ring-shadow': `var(--tw-ring-inset,) 0 0 0 ${clamp} var(--tw-ring-color, currentcolor)`,
-	'box-shadow':
-		'var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000)',
+	'--tw-ring-shadow': `var(--tw-ring-inset,) 0 0 0 calc(${clamp} + var(--tw-ring-offset-width, 0px)) var(--tw-ring-color, currentcolor)`,
+	'box-shadow': [
+		'var(--tw-inset-shadow, 0 0 #0000)',
+		'var(--tw-inset-ring-shadow, 0 0 #0000)',
+		'var(--tw-ring-offset-shadow, 0 0 #0000)',
+		'var(--tw-ring-shadow, 0 0 #0000)',
+		'var(--tw-shadow, 0 0 #0000)',
+	].join(', '),
+});
+
+/**
+ * A width root that also emits its matching core `*-style: var(--tw-*-style)`
+ * declaration (review finding 1) — the border/outline width utilities are useless
+ * without the style, since the CSS initial style is `none`. Core emits the style
+ * first, then the width; we match that order. The style var carries an inline
+ * `solid` fallback (core's `@property` initial-value) so a standalone `fl-border-*`
+ * / `fl-outline` renders without a separate core style utility.
+ */
+const styledWidth =
+	(styleProp: string, styleVar: string, widthProp: string): Emitter =>
+	(clamp) => ({
+		[styleProp]: `var(${styleVar}, solid)`,
+		[widthProp]: clamp,
+	});
+
+/** A border-width root: the correct logical/physical style + width pair for a side. */
+const borderSide = (root: string, styleProp: string, widthProp: string): UtilityRoot => ({
+	root,
+	scale: 'borderWidth',
+	emit: styledWidth(styleProp, '--tw-border-style', widthProp),
 });
 
 // --- Root config ---------------------------------------------------------------
@@ -177,19 +229,23 @@ export const ROOTS: UtilityRoot[] = [
 	{ root: 'fl-rounded-br', scale: 'radius', properties: ['border-bottom-right-radius'] },
 	{ root: 'fl-rounded-bl', scale: 'radius', properties: ['border-bottom-left-radius'] },
 
-	// Decoration — border widths
-	{ root: 'fl-border', scale: 'borderWidth', properties: ['border-width'] },
-	{ root: 'fl-border-x', scale: 'borderWidth', properties: ['border-inline-width'] },
-	{ root: 'fl-border-y', scale: 'borderWidth', properties: ['border-block-width'] },
-	{ root: 'fl-border-s', scale: 'borderWidth', properties: ['border-inline-start-width'] },
-	{ root: 'fl-border-e', scale: 'borderWidth', properties: ['border-inline-end-width'] },
-	{ root: 'fl-border-t', scale: 'borderWidth', properties: ['border-top-width'] },
-	{ root: 'fl-border-r', scale: 'borderWidth', properties: ['border-right-width'] },
-	{ root: 'fl-border-b', scale: 'borderWidth', properties: ['border-bottom-width'] },
-	{ root: 'fl-border-l', scale: 'borderWidth', properties: ['border-left-width'] },
+	// Decoration — border widths (each also emits its matching border-style var)
+	borderSide('fl-border', 'border-style', 'border-width'),
+	borderSide('fl-border-x', 'border-inline-style', 'border-inline-width'),
+	borderSide('fl-border-y', 'border-block-style', 'border-block-width'),
+	borderSide('fl-border-s', 'border-inline-start-style', 'border-inline-start-width'),
+	borderSide('fl-border-e', 'border-inline-end-style', 'border-inline-end-width'),
+	borderSide('fl-border-t', 'border-top-style', 'border-top-width'),
+	borderSide('fl-border-r', 'border-right-style', 'border-right-width'),
+	borderSide('fl-border-b', 'border-bottom-style', 'border-bottom-width'),
+	borderSide('fl-border-l', 'border-left-style', 'border-left-width'),
 
-	// Decoration — outline / ring / stroke
-	{ root: 'fl-outline', scale: 'outlineWidth', properties: ['outline-width'] },
+	// Decoration — outline / ring / stroke (outline also emits outline-style)
+	{
+		root: 'fl-outline',
+		scale: 'outlineWidth',
+		emit: styledWidth('outline-style', '--tw-outline-style', 'outline-width'),
+	},
 	sp('fl-outline-offset', ['outline-offset'], true),
 	{ root: 'fl-ring', scale: 'ringWidth', emit: ring },
 	{ root: 'fl-stroke', scale: 'strokeWidth', properties: ['stroke-width'] },
