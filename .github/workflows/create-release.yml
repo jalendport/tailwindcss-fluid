@@ -49,9 +49,12 @@ jobs:
           fi
 
       # Stable releases carry the hand-written CHANGELOG.md section as their body. The
-      # heading is matched LITERALLY (awk `index()` / string comparison), never as an
-      # interpolated regex — so the dots in `0.1.0` are literal, and a decoy heading
-      # like `## 1x2y3` can never match the tag `v1.2.3`. A missing section fails.
+      # heading's VERSION FIELD is matched literally (awk field comparison), never as
+      # an interpolated regex or a substring — so the dots in `0.1.0` are literal, a
+      # decoy like `## 1x2y3` can't match `v1.2.3`, and `## Next [1.2.3] notes` can't
+      # be mistaken for the real `## [1.2.3] - 2026-07-17`. Both the bare
+      # (`## 1.2.3`) and Keep-a-Changelog bracketed (`## [1.2.3] - <date>`) heading
+      # styles are accepted; field 2 is the version either way. A missing section fails.
       - name: Extract release notes from CHANGELOG.md
         if: steps.channel.outputs.prerelease == 'false'
         env:
@@ -61,7 +64,7 @@ jobs:
           awk -v version="$TAG_VERSION" '
             /^## / {
               if (found) exit
-              if ($2 == version || index($0, "[" version "]") > 0) { found = 1; next }
+              if ($2 == version || $2 == "[" version "]") { found = 1; next }
             }
             found { print }
           ' CHANGELOG.md > release-notes.md
