@@ -14,6 +14,10 @@
 		{
 			"files": ["*.json", "*.jsonc"],
 			"options": { "tabWidth": 2 }
+		},
+		{
+			"files": ["*.md"],
+			"options": { "embeddedLanguageFormatting": "off" }
 		}
 	]
 }
