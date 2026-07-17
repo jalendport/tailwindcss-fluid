@@ -20,6 +20,15 @@ const lengthRegExp = new RegExp(
 // v4 negates `-fl-*` candidate values by wrapping them, e.g. `calc(0.75rem * -1)`.
 const negatedCalc = /^\s*calc\(\s*(.+?)\s*\*\s*-1\s*\)\s*$/;
 
+/**
+ * Whether a candidate start value is v4's negated form (`calc(<len> * -1)`).
+ * Used to detect negative mode structurally rather than from the parsed number,
+ * which loses the sign for a zero start (`calc(0rem * -1)` parses to JS `-0`, and
+ * `-0 < 0` is false). See the `-fl-p-0/3` regression.
+ */
+export const isNegated = (raw: unknown): boolean =>
+	typeof raw === 'string' && negatedCalc.test(raw);
+
 export class Length {
 	constructor(
 		public number: number,

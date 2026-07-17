@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { run } from './harness';
 import { Length } from '../src/css';
 import { generate } from '../src/expr';
-import { FluidError } from '../src/errors';
+import type { FluidError } from '../src/errors';
 import { resolveTheme } from '../src/theme';
 
 /**
@@ -41,12 +41,20 @@ describe('expr.generate (ported v3 math)', () => {
 		);
 	});
 
-	it('throws mismatched-units on differing units', () => {
-		expect(() => generate(new Length(1, 'rem'), new Length(1, 'px'))).toThrowError(FluidError);
+	it('folds px endpoints to rem instead of erroring on unit difference', () => {
+		// Per PLAN's unit-policy amendment px is rem-resolvable (folded at 16), so a
+		// rem/px pair interpolates rather than raising mismatched-units.
+		expect(nows(generate(new Length(1, 'rem'), new Length(32, 'px')))).toBe(
+			nows(clampStr('1', '1', '1', '2')),
+		);
+	});
+
+	it('throws unsupported-unit for a non-rem-resolvable (em) endpoint', () => {
 		try {
-			generate(new Length(1, 'rem'), new Length(2, 'px'));
+			generate(new Length(0.1, 'em'), new Length(0.2, 'em'));
+			throw new Error('should have thrown');
 		} catch (e) {
-			expect((e as FluidError).code).toBe('mismatched-units');
+			expect((e as FluidError).code).toBe('unsupported-unit');
 		}
 	});
 
@@ -195,9 +203,75 @@ describe('error surface (--tw-fl-error, never null)', () => {
 		expect(css).toContain('no-change');
 	});
 
-	it('mismatched-units when endpoints use different units', async () => {
-		const css = await run(['fl-p-4/px']);
+	it('unsupported-unit when an endpoint is a non-rem-resolvable unit', async () => {
+		const css = await run(['fl-p-[1rem]/[2em]']);
 		expect(css).toContain('--tw-fl-error');
-		expect(css).toContain('mismatched-units');
+		expect(css).toContain('unsupported-unit');
+	});
+});
+
+/**
+ * Phase A — the Codex M1 review's exact failing inputs, now fixed.
+ * (findings 1 & 2 in .briefs/review-m1-findings.md).
+ */
+describe('review finding 1 — unit policy (rem-resolvable only)', () => {
+	it('folds px arbitrary endpoints to correct rem math (fl-p-[16px]/[32px])', async () => {
+		// Was: clamp(16px, calc(16px + (16)*…rem…), 32px) — jumped to max early.
+		// Now: 16px→1rem, 32px→2rem, emitted in rem.
+		const css = await run(['fl-p-[16px]/[32px]']);
+		expect(nows(css)).toContain(nows(`padding:${clampStr('1', '1', '1', '2')}`));
+		// The clamp is emitted purely in rem — no px leaks into the interpolation.
+		expect(nows(css)).not.toContain('px,calc');
+	});
+
+	it('errors unsupported-unit for an em sub-value pair (fl-text)', async () => {
+		// A custom font-size whose letter-spacing sub-values are em → can't interpolate.
+		const css = await run(['fl-text-a/b'], {
+			css: '@theme { --text-a: 1rem; --text-a--letter-spacing: 0.1em; --text-b: 2rem; --text-b--letter-spacing: 0.2em; }',
+		});
+		expect(css).toContain('--tw-fl-error');
+		expect(css).toContain('unsupported-unit');
+		// Font size itself still interpolates (rem).
+		expect(nows(css)).toContain(nows(`font-size:${clampStr('1', '1', '1', '2')}`));
+	});
+
+	it('errors on a non-rem breakpoint option (min-screen in em)', async () => {
+		await expect(run(['fl-p-4/8'], { pluginOptions: 'min-screen: 30em;' })).rejects.toThrow();
+	});
+});
+
+describe('review finding 2 — negative zero ranges', () => {
+	it('-fl-p-0/3 stays negative (0 → -0.75rem)', async () => {
+		const css = await run(['-fl-p-0/3']);
+		expect(css).toContain('.-fl-p-0\\/3');
+		// 0rem → -0.75rem, slope -0.75, clamp bounds swapped.
+		expect(nows(css)).toContain(nows(clampStr('-0.75', '0', '-0.75', '0')));
+	});
+
+	it('-fl-p-0/0 is a no-change error, not a silent positive', async () => {
+		const css = await run(['-fl-p-0/0']);
+		expect(css).toContain('--tw-fl-error');
+		expect(css).toContain('no-change');
+	});
+});
+
+describe('review finding 4 — error-surface boundary', () => {
+	/** The `@layer utilities` slice, where a generated `fl-` rule would appear. */
+	const utils = (css: string) => css.split('@layer utilities')[1] ?? '';
+
+	it('surfaces an error when the start parses but the end does not', async () => {
+		// Valid length start → handler runs → non-length-end surfaced.
+		expect(await run(['fl-p-4/foo'])).toContain('--tw-fl-error');
+		expect(await run(['fl-p-[3px]/foo'])).toContain('--tw-fl-error');
+	});
+
+	it('drops candidates the scanner/parser reject before the handler (documented boundary)', async () => {
+		// Non-length start, arbitrary non-length start, and malformed slash never
+		// reach the handler, so no rule and no --tw-fl-error is emitted for them.
+		for (const c of ['fl-p-foo/4', 'fl-p-[foo]/4', 'fl-p-4/']) {
+			const css = await run([c]);
+			expect(css).not.toContain('--tw-fl-error');
+			expect(/\.[^{]*fl-p/.test(utils(css))).toBe(false);
+		}
 	});
 });

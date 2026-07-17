@@ -21,6 +21,20 @@ function toLength(v: Length | RawValue, side: 'start' | 'end'): Length {
 }
 
 /**
+ * Normalize an endpoint to a rem number per PLAN's unit policy (amended
+ * 2026-07-17): rem passes through, px folds at 16px/rem, a zero is unit-free (it
+ * adopts the other side's unit later), and every other unit raises
+ * `unsupported-unit` because the rem-denominated interpolation term can't
+ * represent it. Applied to both endpoints before any clamp is emitted.
+ */
+function toRem(len: Length): Length {
+	if (len.number === 0) return new Length(0); // unit-free zero
+	if (!len.unit || len.unit === 'rem') return new Length(len.number, 'rem');
+	if (len.unit === 'px') return new Length(len.number / 16, 'rem');
+	error('unsupported-unit', len);
+}
+
+/**
  * Emit the fluid clamp formula interpolating `rawStart` → `rawEnd` over the engine
  * variables. Throws a `FluidError` for any invalid pair (the caller surfaces it as
  * a `--tw-fl-error` declaration). The `--fl-vw` variable is `100vw` by default and
@@ -30,14 +44,17 @@ export function generate(rawStart: Length | RawValue, rawEnd: Length | RawValue)
 	if (rawStart == null || rawStart === '') error('missing-start');
 	if (rawEnd == null || rawEnd === '') error('missing-end');
 
-	let start = toLength(rawStart, 'start');
-	let end = toLength(rawEnd, 'end');
+	// Normalize both endpoints to rem (px folded, other units rejected) before
+	// anything else, so the emitted clamp is always rem-denominated — the only form
+	// the runtime-variable interpolation term represents correctly.
+	let start = toRem(toLength(rawStart, 'start'));
+	let end = toRem(toLength(rawEnd, 'end'));
 
-	// Zero adopts the other side's unit; otherwise units must match.
-	if (start.number === 0) start = new Length(0, end.unit);
-	else if (end.number === 0) end = new Length(0, start.unit);
-	else if (!start.unit || start.unit !== end.unit) error('mismatched-units', start, end);
-	const unit = start.unit ?? end.unit ?? '';
+	// A zero is unit-free; it adopts the other (now-rem) side's unit. With both
+	// non-zero sides already rem, no unit reconciliation remains.
+	if (start.number === 0) start = new Length(0, end.unit ?? 'rem');
+	else if (end.number === 0) end = new Length(0, start.unit ?? 'rem');
+	const unit = 'rem';
 
 	if (start.number === end.number) error('no-change', start);
 

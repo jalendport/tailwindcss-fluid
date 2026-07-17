@@ -8,26 +8,48 @@
 // every root with no modifier, so a null return crashes the whole design system.
 
 import type plugin from 'tailwindcss/plugin';
-import { Length } from './css';
+import { isNegated, Length } from './css';
 import { error, errorDecl, FluidError } from './errors';
 import { generate } from './expr';
-import type { FluidText, FluidTheme } from './theme';
+import type { FluidText, FluidTheme, ScaleName } from './theme';
 
 // PluginAPI isn't exported by tailwindcss; recover it from the plugin handler type.
 export type PluginAPI = Parameters<Parameters<typeof plugin>[0]>[0];
 
 export type UtilityKind = 'length' | 'font-size';
 
+/** A CSS-in-JS declaration block (supports nested `&`-selectors for space/divide). */
+export type Decls = Record<string, string | Record<string, string>>;
+
+/** Turn the emitted clamp string into the utility's declaration block. */
+export type Emitter = (clamp: string) => Decls;
+
 export interface UtilityRoot {
 	/** Canonical root, e.g. `fl-p`. Negatives register automatically as `-fl-p`. */
 	root: string;
-	/** How values resolve and what declarations are emitted. */
-	kind: UtilityKind;
-	/** CSS properties the clamp is assigned to (length kind). */
+	/** How values resolve and what declarations are emitted. Defaults to `length`. */
+	kind?: UtilityKind;
+	/** Which named value scale the root draws from (length kind). Defaults to `spacing`. */
+	scale?: ScaleName;
+	/** CSS properties the clamp is assigned to (length kind, default emitter). */
 	properties?: string[];
+	/**
+	 * Custom emission for roots that need more than a flat property list — a child
+	 * selector (`space-x`), a transform variable (`translate-x`), the ring shadow
+	 * stack (`ring`). Receives the clamp; returns the full declaration block.
+	 */
+	emit?: Emitter;
+	/** Accepted arbitrary-value data types (length kind). Defaults to `['length']`. */
+	type?: Parameters<PluginAPI['matchUtilities']>[1] extends { type?: infer T } ? T : never;
 	/** Register the `-fl-…` negative form. */
 	negative?: boolean;
 }
+
+/** Assign the clamp to each listed CSS property. */
+const assignEmitter =
+	(properties: string[]): Emitter =>
+	(clamp) =>
+		Object.fromEntries(properties.map((p) => [p, clamp]));
 
 /** Register one fluid root against the plugin API. */
 export function registerRoot(api: PluginAPI, theme: FluidTheme, root: UtilityRoot): void {
@@ -38,24 +60,38 @@ export function registerRoot(api: PluginAPI, theme: FluidTheme, root: UtilityRoo
 function registerLength(
 	api: PluginAPI,
 	theme: FluidTheme,
-	{ root, properties = [], negative }: UtilityRoot,
+	{ root, scale = 'spacing', properties = [], emit, type, negative }: UtilityRoot,
 ): void {
-	const values = theme.spacing;
+	const values = theme.scales[scale];
+	const emitter = emit ?? assignEmitter(properties);
 
+	// Error-surface boundary (review finding 4): a candidate only reaches this
+	// handler if Tailwind first accepts its *start* value against `type`/`values`.
+	// So `fl-p-4/foo` and `fl-p-[3px]/foo` (valid length start, bad end) DO surface a
+	// `--tw-fl-error`, but three shapes are dropped by the scanner/parser before we
+	// ever run and can't be surfaced from here:
+	//   • an unknown, non-length start (`fl-p-foo/4`) — filtered out by `type`;
+	//   • an arbitrary non-length start (`fl-p-[foo]/4`) — same;
+	//   • a malformed slash (`fl-p-4/`) — rejected by Tailwind's candidate parser.
+	// The variant-side miss (`fl-nope/lg:`) is out of scope until M3. Broadening
+	// `type` to `'any'` to catch the first two would make every junk class compile to
+	// an error rule and flood the language server's root enumeration, so it's not
+	// worth it — the boundary is intentional. Covered by the finding-4 test.
 	api.matchUtilities(
 		{
-			[root]: (value, { modifier }) => {
+			[root]: (value, { modifier }): Decls => {
 				try {
 					if (modifier == null) error('missing-end');
 					const start = Length.parse(value);
 					if (!start) error('non-length-start', value);
 					let end = Length.parse(values[modifier] ?? modifier);
 					if (!end) error('non-length-end', modifier);
-					// v4 negates the start value for `-fl-…` but leaves the modifier
-					// positive; mirror the sign so the whole range is negative.
-					if (start.number < 0) end = new Length(-Math.abs(end.number), end.unit);
-					const clamp = generate(start, end);
-					return Object.fromEntries(properties.map((p) => [p, clamp]));
+					// v4 hands `-fl-…` the start as `calc(<len> * -1)` but leaves the
+					// modifier positive. Detect the negation structurally (not from the
+					// parsed sign — a zero start parses to `-0`, and `-0 < 0` is false) and
+					// mirror it onto the end so the whole range is negative.
+					if (isNegated(value)) end = new Length(-Math.abs(end.number), end.unit);
+					return emitter(generate(start, end));
 				} catch (e) {
 					return errorDecl(e);
 				}
@@ -65,7 +101,7 @@ function registerLength(
 			values,
 			modifiers: 'any',
 			supportsNegativeValues: negative ?? false,
-			type: ['length'],
+			type: type ?? ['length'],
 		},
 	);
 }

@@ -17,6 +17,12 @@ export const codes = {
 	'non-length-end': (end: string) => `End value \`${end}\` is not a length`,
 	'mismatched-units': (start: Length, end: Length) =>
 		`Start \`${start.cssText}\` and end \`${end.cssText}\` units don't match`,
+	// The runtime formula's interpolation term is rem-denominated (unitless slope ×
+	// rem length), so only rem-resolvable endpoints can interpolate: rem native, px
+	// folded at 16px/rem. Any other unit (em, ch, lh, …) on a differing endpoint is
+	// dimensionally wrong — see PLAN's 2026-07-17 unit-policy amendment.
+	'unsupported-unit': (val: Length) =>
+		`Unit of \`${val.cssText}\` can't interpolate fluidly (only rem and px are rem-resolvable)`,
 	'no-change': (val: Length) => `Start and end values are both \`${val.cssText}\``,
 	'bp-not-found': (key: string, name: string) => `Could not find \`theme.${key}.${name}\``,
 	'no-utility': () => 'Fluid variants can only be used with fluid utilities',

@@ -25,10 +25,40 @@ export interface FluidText {
 	raw: { lineHeight?: string; letterSpacing?: string; fontWeight?: string };
 }
 
+/**
+ * The value-scale families a length root can draw its named keys from. Each maps
+ * to a compat `theme()` source and is length-filtered on resolution. `spacing` is
+ * the default and backs the whole spacing family plus sizing (their numeric keys
+ * share `--spacing`). Font-size tuples are handled separately (see `text`).
+ */
+export type ScaleName =
+	| 'spacing'
+	| 'radius'
+	| 'borderWidth'
+	| 'outlineWidth'
+	| 'ringWidth'
+	| 'strokeWidth'
+	| 'lineHeight'
+	| 'letterSpacing';
+
+/** compat `theme()` keys for each scale family. */
+const SCALE_SOURCE: Record<ScaleName, string> = {
+	spacing: 'spacing',
+	radius: 'borderRadius',
+	borderWidth: 'borderWidth',
+	outlineWidth: 'outlineWidth',
+	ringWidth: 'ringWidth',
+	strokeWidth: 'strokeWidth',
+	lineHeight: 'lineHeight',
+	letterSpacing: 'letterSpacing',
+};
+
 export interface FluidTheme {
 	breakpoints: Record<string, Length>;
 	containers: Record<string, Length>;
 	spacing: Record<string, string>;
+	/** Length-filtered named value maps, one per scale family. */
+	scales: Record<ScaleName, Record<string, string>>;
 	text: Record<string, FluidText>;
 	/** Smallest / largest breakpoint as unitless rem numbers (default range). */
 	defaultMin: number;
@@ -37,11 +67,22 @@ export interface FluidTheme {
 	resolveBreakpoint(kind: 'breakpoint' | 'containers', name: string): number;
 }
 
-/** Convert a length to a unitless rem number (px folded at 16px/rem). */
+/**
+ * Convert a length to a unitless rem number: rem native, px folded at 16px/rem, a
+ * zero unit-free. Any other unit raises `unsupported-unit` — the same rem-only
+ * policy the clamp emitter enforces, applied here to breakpoints, containers, and
+ * the `min-screen`/`max-screen` options.
+ */
 export function remNumber(len: Length): number {
+	if (len.number === 0) return 0;
+	if (len.unit === 'rem') return len.number;
 	if (len.unit === 'px') return len.number / 16;
-	return len.number;
+	error('unsupported-unit', len);
 }
+
+/** Whether a length is rem-resolvable (rem, px, or zero) — safe for `remNumber`. */
+const remResolvable = (len: Length): boolean =>
+	len.number === 0 || len.unit === 'rem' || len.unit === 'px';
 
 /** Filter a compat `theme()` map to string-valued entries, dropping `__…` sentinels. */
 function stringMap(raw: unknown): Record<string, string> {
@@ -61,6 +102,23 @@ function lengthMap(raw: unknown): Record<string, Length> {
 	for (const [k, v] of Object.entries(stringMap(raw))) {
 		const len = Length.parse(v);
 		if (len && len.unit) out[k] = len;
+	}
+	return out;
+}
+
+/**
+ * A named value map for a length root: keeps only entries that parse as a length
+ * with a unit. This drops the compat layer's junk (e.g. `theme('borderRadius')`
+ * spreads its scalar DEFAULT into bogus numeric keys `{0:'0',1:'.',2:'2',…}`) and
+ * unitless entries (`strokeWidth` `{1:'1'}`, ratio `lineHeight` `none`) that can't
+ * ride the rem-denominated formula. Em `letterSpacing` values are kept so they
+ * surface `unsupported-unit` at emit rather than silently vanishing.
+ */
+function scaleMap(raw: unknown): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [k, v] of Object.entries(stringMap(raw))) {
+		const len = Length.parse(v);
+		if (len && len.unit) out[k] = v;
 	}
 	return out;
 }
@@ -119,7 +177,15 @@ export function resolveTheme(theme: ThemeFn): FluidTheme {
 	const spacing = stringMap(theme('spacing'));
 	const text = normalizeText(theme('fontSize'));
 
-	const bpNumbers = Object.values(breakpoints).map(remNumber);
+	const scales = {} as Record<ScaleName, Record<string, string>>;
+	for (const [name, source] of Object.entries(SCALE_SOURCE) as [ScaleName, string][]) {
+		scales[name] = scaleMap(theme(source));
+	}
+
+	// Only rem-resolvable breakpoints seed the default range; an exotic-unit
+	// breakpoint is ignored here (rather than crashing plugin init) but still errors
+	// if named explicitly via `resolveBreakpoint`.
+	const bpNumbers = Object.values(breakpoints).filter(remResolvable).map(remNumber);
 	const defaultMin = bpNumbers.length ? Math.min(...bpNumbers) : 40;
 	const defaultMax = bpNumbers.length ? Math.max(...bpNumbers) : 96;
 
@@ -127,6 +193,7 @@ export function resolveTheme(theme: ThemeFn): FluidTheme {
 		breakpoints,
 		containers,
 		spacing,
+		scales,
 		text,
 		defaultMin,
 		defaultMax,
