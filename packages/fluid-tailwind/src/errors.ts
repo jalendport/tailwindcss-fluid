@@ -35,16 +35,19 @@ export const codes = {
 		`Start and end are both \`${val.cssText}\` — a fluid range needs two different values`,
 	// Fluid theme tokens (`--fl-*`): a token carries BOTH ends, so it takes no slash
 	// end and can't sit in the end channel, and it must be a two-value rem pair.
+	// "Literal" is deliberate: endpoints must be plain lengths — `calc(…)` and other
+	// expressions aren't supported, because the engine needs numeric rem endpoints.
 	'token-not-pair': (val: string) =>
-		`Fluid token \`${val}\` must be exactly two rem-resolvable values (e.g. \`2rem 4rem\`)`,
+		`Fluid token \`${val}\` must be exactly two literal rem/px lengths (e.g. \`2rem 4rem\`); calc() and other expressions aren't supported`,
 	'token-with-end': (val: string) =>
 		`Fluid token \`${val}\` already sets both ends — drop the trailing \`/…\``,
 	'token-as-end': (name: string) =>
 		`Fluid token \`${name}\` can't be a range end — a token already carries both ends`,
 	'bp-not-found': (key: string, name: string) =>
 		`No \`${name}\` in \`theme.${key}\` — use a defined breakpoint or an arbitrary length like \`[24rem]\``,
-	'no-utility': () =>
-		'Fluid variants only apply to fluid utilities (e.g. `fl-md/lg:fl-text-sm/xl`)',
+	// NOTE: v3's `no-utility` code was intentionally dropped. In v4 a variant never
+	// sees the utility it wraps, so a fluid variant on a non-fluid utility
+	// (`fl-md/lg:p-2`) compiles normally — the error can't fire, so it isn't defined.
 	'mismatched-font-weights': () =>
 		"The two font-size endpoints have different font weights, which can't interpolate — give them matching weights",
 	// WCAG 1.4.4 zoom-safety failure on a fluid font-size pair (see sc144.ts). The

@@ -271,10 +271,16 @@ describe('review finding 4 — error-surface boundary', () => {
 		expect(await run(['fl-p-[3px]/foo'])).toContain('--tw-fl-error');
 	});
 
-	it('drops candidates the scanner/parser reject before the handler (documented boundary)', async () => {
-		// Non-length start, arbitrary non-length start, and malformed slash never
+	it('surfaces an error for a bracketed non-length start (finding 6)', async () => {
+		// With `type: ['length', 'any']` an arbitrary non-length start now reaches the
+		// handler and surfaces a visible `non-length-start` error rather than vanishing.
+		expect(await run(['fl-p-[foo]/4'])).toContain('non-length-start');
+	});
+
+	it('drops bareword and malformed candidates before the handler (documented boundary)', async () => {
+		// An unknown bareword start (not in the value map) and a malformed slash never
 		// reach the handler, so no rule and no --tw-fl-error is emitted for them.
-		for (const c of ['fl-p-foo/4', 'fl-p-[foo]/4', 'fl-p-4/']) {
+		for (const c of ['fl-p-foo/4', 'fl-p-4/']) {
 			const css = await run([c]);
 			expect(css).not.toContain('--tw-fl-error');
 			expect(/\.[^{]*fl-p/.test(utils(css))).toBe(false);

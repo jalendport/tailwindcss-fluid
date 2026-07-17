@@ -90,6 +90,60 @@ describe('token error cases surface --tw-fl-error', () => {
 		const body = rule(await withTheme(['fl-p-em']), '.fl-p-em');
 		expect(body).toContain('unsupported-unit');
 	});
+
+	it('a calc() token endpoint → token-not-pair with a literal-lengths message (finding 6)', async () => {
+		const body = rule(
+			await run(['fl-p-calc'], { css: `@theme { --fl-calc: calc(1rem + 1rem) 4rem; }` }),
+			'.fl-p-calc',
+		);
+		expect(body).toContain('token-not-pair');
+		expect(body).toContain('literal rem/px lengths');
+	});
+});
+
+describe('CSS length units are case-insensitive (finding 6)', () => {
+	it('an uppercase-unit token (2REM 4REM) resolves like lowercase', async () => {
+		const body = rule(
+			await run(['fl-p-caps'], { css: `@theme { --fl-caps: 2REM 4REM; }` }),
+			'.fl-p-caps',
+		);
+		expect(nows(body)).toContain(nows(`padding:${clampStr('2', '2', '2', '4')}`));
+	});
+
+	it('an uppercase-unit arbitrary pair (fl-p-[16PX]/[2rem]) folds px→rem', async () => {
+		const body = rule(await run(['fl-p-[16PX]/[2rem]']), '.fl-p-\\[16PX\\]\\/\\[2rem\\]');
+		expect(nows(body)).toContain(nows(`padding:${clampStr('1', '1', '1', '2')}`));
+	});
+});
+
+describe('token/scale name collisions resolve consistently (finding 4)', () => {
+	// Policy: a SLASH pair always resolves the real scale; the NO-SLASH form resolves
+	// the token. Applied identically to length and font-size roots.
+	const LEN = `@theme { --fl-4: 1rem 2rem; }`;
+	const FONT = `@theme { --fl-sm: 1rem 2rem; }`;
+
+	it('length slash pair uses the real spacing scale (fl-p-4/8 → 1rem→2rem)', async () => {
+		const body = rule(await run(['fl-p-4/8'], { css: LEN }), '.fl-p-4\\/8');
+		expect(nows(body)).toContain(nows(`padding:${clampStr('1', '1', '1', '2')}`));
+		expect(body).not.toContain('--tw-fl-error');
+	});
+
+	it('length no-slash form uses the token (fl-p-4 → 1rem→2rem token)', async () => {
+		const body = rule(await run(['fl-p-4'], { css: LEN }), '.fl-p-4 ');
+		expect(nows(body)).toContain(nows(`padding:${clampStr('1', '1', '1', '2')}`));
+	});
+
+	it('font-size slash pair uses the text scale (fl-text-sm/xl → 0.875→1.25)', async () => {
+		const body = rule(await run(['fl-text-sm/xl'], { css: FONT }), '.fl-text-sm\\/xl');
+		expect(nows(body)).toContain(
+			nows(`font-size:${clampStr('0.875', '0.875', '0.375', '1.25')}`),
+		);
+	});
+
+	it('font-size no-slash form uses the token (fl-text-sm → 1rem→2rem token)', async () => {
+		const body = rule(await run(['fl-text-sm'], { css: FONT }), '.fl-text-sm ');
+		expect(nows(body)).toContain(nows(`font-size:${clampStr('1', '1', '1', '2')}`));
+	});
 });
 
 describe('IntelliSense enumeration safety', () => {

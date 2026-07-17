@@ -13,8 +13,12 @@ export type RawValue = string | null | undefined;
 const lengthUnits = ['cm', 'mm', 'Q', 'in', 'pc', 'pt', 'px', 'em', 'ex', 'ch', 'rem', 'lh', 'rlh'];
 // Ripped from Tailwind:
 // https://github.com/tailwindlabs/tailwindcss/blob/master/src/util/dataTypes.js
+// Case-insensitive: CSS length units are ASCII case-insensitive, so `2REM`/`16PX`
+// are valid lengths (review finding 6). The captured unit is normalized to lowercase
+// in `parse` before any rem/px policy check runs.
 const lengthRegExp = new RegExp(
 	`^\\s*([+-]?[0-9]*\\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(${lengthUnits.join('|')})\\s*$`,
+	'i',
 );
 
 // v4 negates `-fl-*` candidate values by wrapping them, e.g. `calc(0.75rem * -1)`.
@@ -59,6 +63,8 @@ export class Length {
 		const match = trimmed.match(lengthRegExp);
 		if (!match) return null;
 		const number = parseFloat(match[1] ?? '');
-		return isNaN(number) ? null : new Length(number, match[2]);
+		// Normalize the unit to lowercase so `2REM`/`16PX` reconcile with the rem/px
+		// policy checks downstream (which compare against lowercase `rem`/`px`).
+		return isNaN(number) ? null : new Length(number, match[2]?.toLowerCase());
 	}
 }

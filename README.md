@@ -166,7 +166,9 @@ The interpolation term is rem-denominated, so endpoints (and breakpoints) must b
 
 ### WCAG 1.4.4 zoom safety
 
-Fluid font sizes are checked at build time against WCAG Success Criterion 1.4.4 (Resize Text). A fluid curve too shallow to reach 200% enlargement under 5× browser zoom is **rejected**: the utility emits no fluid `font-size` (only a `--tw-fl-error`), while its line-height/letter-spacing sub-values still generate. For example `fl-text-sm/5xl` over the default `40rem`→`96rem` range fails. Fixes: **widen the range** (`min-screen`/`max-screen`, or a wider variant range), or disable the check with `checkSC144: false`. The check runs against the default range at utility generation — per-variant ranges are invisible to the utility, so variant-scoped ranges aren't re-checked.
+Fluid font sizes are checked at build time against WCAG Success Criterion 1.4.4 (Resize Text). A fluid curve too shallow to reach 200% enlargement under 5× browser zoom is **rejected**: the utility emits no fluid `font-size` (only a `--tw-fl-error`), while its line-height/letter-spacing sub-values still generate. For example `fl-text-sm/5xl` over the default `40rem`→`96rem` range fails.
+
+The check runs against the default range **at utility generation**, so only two things can change its outcome: widening the range with the `min-screen`/`max-screen` options, or disabling the check with `checkSC144: false`. A wider **variant** range (e.g. `fl-[0.5rem]/[120rem]:fl-text-sm/5xl`) **cannot** rescue it — variants never see the utility they wrap, so a variant range is invisible to generation-time validation and the pair still fails.
 
 ### Error surfacing
 
@@ -182,14 +184,13 @@ Invalid class forms don't throw — they emit a visible `--tw-fl-error` custom p
 | `fails-sc-144`                                       | A font-size pair fails the WCAG 1.4.4 zoom check                                               |
 | `token-not-pair` / `token-with-end` / `token-as-end` | Misused `--fl-*` token (see below)                                                             |
 | `mismatched-font-weights`                            | A `fl-text` pair's endpoints have different font weights                                       |
-| `no-utility`                                         | A fluid variant is used without a fluid utility                                                |
 | `mismatched-units`                                   | Dormant — kept for completeness; the px/rem-fold policy means `unsupported-unit` fires instead |
 
 Some malformed forms (an unknown bareword start like `fl-p-foo/4` or `fl-nope/lg:`) are dropped by Tailwind's scanner/variant matcher before the plugin runs, so they produce no output at all rather than an error surface.
 
 ## Fluid theme tokens
 
-Define reusable endpoint pairs in `@theme` under the `--fl-*` namespace — a space-separated, rem-resolvable pair — and use the token name in any fluid root's value position, with no slash:
+Define reusable endpoint pairs in `@theme` under the `--fl-*` namespace — a space-separated pair of **literal rem/px lengths** (`calc()` and other expressions aren't supported; the engine needs numeric endpoints) — and use the token name in any fluid root's value position, with no slash:
 
 ```css
 @theme {
@@ -207,6 +208,8 @@ Define reusable endpoint pairs in `@theme` under the `--fl-*` namespace — a sp
 | `fl-p-4/gutter`                     | error `token-as-end` — a token can't be a range end                                 |
 | `--fl-single: 2rem` → `fl-p-single` | error `missing-end` — a single value looks like a partial utility                   |
 | `--fl-em: 1em 2em` → `fl-p-em`      | error `unsupported-unit` — rem/px only                                              |
+
+If a token name collides with a real scale key (`--fl-4` vs spacing `4`, `--fl-sm` vs `text-sm`), the two forms disambiguate by shape: a **slash pair always resolves the real scale** (`fl-p-4/8` is spacing 4→8; `fl-text-sm/xl` is the text scale), and the **no-slash form resolves the token** (`fl-p-4` and `fl-text-sm` use `--fl-4` / `--fl-sm`).
 
 ## tailwind-merge companion
 
@@ -229,7 +232,23 @@ const twMerge = extendTailwindMerge(withFluid);
 | `fl-md/lg:fl-text-sm/xl fl-lg/xl:fl-text-sm/xl` | (both kept)     | Distinct range variants (different modifiers) |
 | `@fl-md/lg:fl-p-4/8 fl-md/lg:fl-p-2/6`          | (both kept)     | Container range ≠ viewport range              |
 
-Mechanism: `experimentalParseClassName` rewrites a fluid base class to its core-equivalent base (`fl-p-4/8` → `p-4`) for conflict grouping only; the original fluid string is what's emitted, and range variants ride the modifiers channel untouched so they form distinct groups. (Token forms like `fl-p-gutter` rewrite to `p-gutter`, which only groups if the token name is a value tailwind-merge already knows — tokens are theme-defined and out of its static knowledge.)
+Mechanism: `experimentalParseClassName` rewrites a fluid base class to its core-equivalent base (`fl-p-4/8` → `p-4`) for conflict grouping only; the original fluid string is what's emitted. A fluid class is grouped **only when it provably compiles to its property** — both the start and end channel must validate against the same core class group, so an invalid pair like `fl-p-4/foo` (which emits only an error) is left ungrouped and merges with nothing rather than deleting a real fallback. Token forms (`fl-p-gutter`, no slash) are theme-defined and out of tailwind-merge's static knowledge, so they too stay ungrouped.
+
+Range variants are **order-sensitive**: `hover:fl-md/lg:…` and `fl-md/lg:hover:…` are distinct groups (they scope the range differently — see below), so neither overwrites the other.
+
+`fl-text` cross-merges are additionally gated by the same WCAG 1.4.4 check the plugin runs: a font-size pair the plugin would reject (emitting no `font-size`) is left ungrouped, so it can't delete a real `text-*`. Because this check depends on your theme, `withFluid` takes options mirroring the plugin — pass them to match a non-default plugin config:
+
+```ts
+const twMerge = extendTailwindMerge((config) =>
+	withFluid(config, {
+		checkSC144: false, // skip the SC 1.4.4 gate entirely (match `@plugin { checkSC144: false }`)
+		minScreen: '20rem', // range start for the gate (default 40rem)
+		maxScreen: '80rem', // range end for the gate   (default 96rem)
+	}),
+);
+```
+
+The gate evaluates named default-scale font sizes against the default `40rem`→`96rem` range. A custom `--text-*` scale or `--breakpoint-*` range shifts what the plugin actually emits; `minScreen`/`maxScreen` (and `checkSC144: false`) exist to realign the merge check with that reality.
 
 ## Migrating from fluid-tailwind (v3)
 
