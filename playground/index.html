@@ -26,6 +26,20 @@
 		<!-- arbitrary values + px fold -->
 		<div class="fl-p-[16px]/[2rem] fl-m-[0.5rem]/[1.5rem]">arbitrary</div>
 
+		<!-- (M4) fluid theme tokens (--fl-* namespace): pair in the value position,
+		     no slash end. --fl-display: 2rem 4rem; --fl-gutter: 0.5rem 2rem. -->
+		<div class="fl-text-display fl-p-gutter">theme tokens</div>
+
+		<!-- (M4) WCAG 1.4.4 zoom-safety check on font-size pairs.
+		     PASSING pair (gentle slope) — emits a fluid font-size: -->
+		<p class="fl-text-base/3xl">sc144-safe fluid heading</p>
+		<!-- FAILING pair (too steep for 5x zoom) — REJECTED: emits no fluid font-size,
+		     only `--tw-fl-error: "fails-sc-144: …"`. Kept behind this comment so the
+		     fixture documents the failure without shipping a broken utility:
+		<p class="fl-text-sm/5xl">sc144-unsafe (rejected)</p>
+		-->
+		<!-- disable per-project via `@plugin "tailwindcss-fluid" { checkSC144: false }` -->
+
 		<!-- (3) viewport range variants -->
 		<div class="fl-md/lg:fl-text-sm/xl">range md→lg</div>
 		<div class="fl-md:fl-text-sm/xl">start only</div>

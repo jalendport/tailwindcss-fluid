@@ -7,4 +7,10 @@
 /* A user theme token whose name overlaps the @fl variant root, to prove no collision. */
 @theme {
 	--container-fl: 30rem;
+
+	/* M4 fluid theme tokens (`--fl-*`): a space-separated rem-resolvable pair used
+	   in a fluid utility's value position with no slash end (e.g. `fl-text-display`,
+	   `fl-p-gutter`). Also exercises IntelliSense enumeration safety in test:ls. */
+	--fl-display: 2rem 4rem;
+	--fl-gutter: 0.5rem 2rem;
 }
