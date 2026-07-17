@@ -3,6 +3,7 @@ import { extendTailwindMerge, validators } from 'tailwind-merge';
 import { withFluid } from '../src/index';
 
 const twMerge = extendTailwindMerge(withFluid);
+const twMergeNoSC144 = extendTailwindMerge((config) => withFluid(config, { checkSC144: false }));
 
 describe('fluid utilities merge last-wins among themselves', () => {
 	it('two fluid font sizes → last wins', () => {
@@ -96,5 +97,56 @@ describe('does not disturb core merging', () => {
 		);
 		expect(tw('fl-p-4/8 fl-p-2/6')).toBe('fl-p-2/6');
 		expect(tw('foo-bar-[2px] foo-bar-[3px]')).toBe('foo-bar-[3px]');
+	});
+});
+
+describe('validate before grouping — never delete a class that renders (finding 1)', () => {
+	it('an invalid end value leaves the fluid class ungrouped (both kept)', () => {
+		// `fl-p-4/foo` compiles to only a `--tw-fl-error`, no padding — it must not
+		// displace the real `p-2`.
+		expect(twMerge('p-2 fl-p-4/foo')).toBe('p-2 fl-p-4/foo');
+	});
+
+	it('a font-size pair that fails SC 1.4.4 stays ungrouped by default (both kept)', () => {
+		// `fl-text-sm/5xl` (0.875→3rem over 40→96) fails SC 1.4.4, so the plugin emits
+		// no font-size — it must not delete the real `text-lg`.
+		expect(twMerge('text-lg fl-text-sm/5xl')).toBe('text-lg fl-text-sm/5xl');
+	});
+
+	it('the same SC-failing pair MERGES once the check is disabled', () => {
+		// With `checkSC144: false` the plugin emits the font-size, so grouping is correct.
+		expect(twMergeNoSC144('text-lg fl-text-sm/5xl')).toBe('fl-text-sm/5xl');
+	});
+
+	it('a valid, SC-passing font-size pair still merges by default', () => {
+		expect(twMerge('text-lg fl-text-sm/xl')).toBe('fl-text-sm/xl');
+	});
+
+	it('a valid length pair still merges by default', () => {
+		expect(twMerge('p-2 fl-p-4/8')).toBe('fl-p-4/8');
+	});
+
+	it('an arbitrary length pair merges when both ends validate', () => {
+		expect(twMerge('p-4 fl-p-[1rem]/[2rem]')).toBe('fl-p-[1rem]/[2rem]');
+	});
+});
+
+describe('range variants are order-sensitive (finding 2)', () => {
+	it('hover:fl-md/lg: and fl-md/lg:hover: are distinct groups (both kept)', () => {
+		expect(twMerge('hover:fl-md/lg:fl-p-4/8 fl-md/lg:hover:fl-p-2/6')).toBe(
+			'hover:fl-md/lg:fl-p-4/8 fl-md/lg:hover:fl-p-2/6',
+		);
+	});
+
+	it('media order matters too: md:fl-lg/2xl: vs fl-lg/2xl:md: (both kept)', () => {
+		expect(twMerge('md:fl-lg/2xl:fl-p-4/8 fl-lg/2xl:md:fl-p-2/6')).toBe(
+			'md:fl-lg/2xl:fl-p-4/8 fl-lg/2xl:md:fl-p-2/6',
+		);
+	});
+
+	it('identical range + state order still merges last-wins', () => {
+		expect(twMerge('hover:fl-md/lg:fl-p-4/8 hover:fl-md/lg:fl-p-2/6')).toBe(
+			'hover:fl-md/lg:fl-p-2/6',
+		);
 	});
 });
