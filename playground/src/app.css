@@ -1,0 +1,10 @@
+@import 'tailwindcss';
+@plugin "tailwindcss-fluid" {
+	min-screen: 40rem;
+	max-screen: 96rem;
+}
+
+/* A user theme token whose name overlaps the @fl variant root, to prove no collision. */
+@theme {
+	--container-fl: 30rem;
+}

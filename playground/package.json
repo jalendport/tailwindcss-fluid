@@ -1,0 +1,19 @@
+{
+	"name": "playground",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"preview": "vite preview",
+		"test:e2e": "node ./scripts/verify-clamp.mjs"
+	},
+	"devDependencies": {
+		"@tailwindcss/vite": "^4.3.3",
+		"playwright": "^1.50.0",
+		"tailwindcss": "^4.3.3",
+		"tailwindcss-fluid": "workspace:*",
+		"vite": "^6.0.11"
+	}
+}

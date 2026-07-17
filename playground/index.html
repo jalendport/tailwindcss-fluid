@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>tailwindcss-fluid playground</title>
+		<link rel="stylesheet" href="/src/app.css" />
+	</head>
+	<body>
+		<!-- Fixture classes exercised by the M0 spike + Playwright verification. -->
+
+		<!-- (6) clamp math on font-size, default viewport range -->
+		<h1 id="viewport-type" class="fl-text-sm/xl">Fluid viewport type</h1>
+
+		<!-- negatives -->
+		<p class="-fl-mt-3/5">Negative fluid margin</p>
+
+		<!-- (3) viewport range variants -->
+		<div class="fl-md/lg:fl-text-sm/xl">range md→lg</div>
+		<div class="fl-md:fl-text-sm/xl">start only</div>
+		<div class="fl/lg:fl-text-sm/xl">end only</div>
+
+		<!-- (4)(6) container-query range variant + 100cqw swap -->
+		<div id="container" style="container-type: inline-size; width: 800px">
+			<h2 id="container-type" class="@fl-md/lg:fl-text-sm/xl">Fluid container type</h2>
+		</div>
+
+		<script type="module" src="/src/main.ts"></script>
+	</body>
+</html>

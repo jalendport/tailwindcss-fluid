@@ -1,0 +1,32 @@
+{
+	"name": "tailwindcss-fluid-merge",
+	"version": "0.0.0",
+	"description": "tailwind-merge companion for tailwindcss-fluid (built at M4).",
+	"license": "MIT",
+	"author": "Jalen Davenport",
+	"type": "module",
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsdown",
+		"test": "vitest run --passWithNoTests"
+	},
+	"peerDependencies": {
+		"tailwind-merge": "^3"
+	},
+	"devDependencies": {
+		"tsdown": "^0.22.9",
+		"typescript": "^5.7.3",
+		"vitest": "^4.1.10"
+	}
+}
