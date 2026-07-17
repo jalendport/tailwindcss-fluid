@@ -3,68 +3,205 @@
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>tailwindcss-fluid playground</title>
+		<title>tailwindcss-fluid — demo</title>
 		<link rel="stylesheet" href="/src/app.css" />
 	</head>
-	<body>
-		<!-- Fixture classes exercised by the M0 spike + Playwright verification. -->
+	<body class="bg-slate-50 font-sans text-slate-800 antialiased">
+		<main class="mx-auto max-w-3xl px-6 py-16">
+			<header class="mb-10 border-b border-slate-200 pb-8">
+				<h1 class="text-3xl font-bold tracking-tight text-slate-900">tailwindcss-fluid</h1>
+				<p class="mt-2 text-lg text-slate-600">
+					Fluid <code class="rounded bg-slate-200 px-1 text-sm">clamp()</code> utilities
+					and range variants for Tailwind CSS v4.
+				</p>
+				<p
+					class="mt-4 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900"
+				>
+					<strong>Resize this window</strong> to watch the viewport-ranged examples
+					interpolate, and <strong>drag the container handle</strong> in the
+					container-range section to see one scale on container width instead.
+				</p>
+			</header>
 
-		<!-- (6) clamp math on font-size, default viewport range -->
-		<h1 id="viewport-type" class="fl-text-sm/xl">Fluid viewport type</h1>
+			<!-- Type scale — clamp math on font-size, default viewport range. -->
+			<section class="mb-12">
+				<h2 class="mb-1 text-sm font-semibold tracking-wide text-slate-500 uppercase">
+					Type scale
+				</h2>
+				<p class="mb-4 text-sm text-slate-500">
+					<code class="text-xs">fl-text-sm/xl</code> ramps font-size (and its line-height)
+					across the default 40rem→96rem range.
+				</p>
+				<div class="rounded-lg border border-slate-200 bg-white p-6">
+					<h1 id="viewport-type" class="fl-text-sm/xl font-semibold text-slate-900">
+						Fluid viewport type
+					</h1>
+				</div>
+			</section>
 
-		<!-- M2 sampling of the full root list across scale families -->
-		<!-- spacing family (+ negative margin — padding has no core negative) -->
-		<div class="fl-p-4/8 fl-mx-2/6 -fl-mt-3/5 fl-gap-2/6 fl-space-x-2/6">spacing</div>
-		<!-- sizing -->
-		<div class="fl-w-16/32 fl-h-8/16 fl-size-4/8 fl-max-w-24/48 fl-basis-8/16">sizing</div>
-		<!-- type -->
-		<div class="fl-leading-4/8 fl-indent-2/6 fl-tracking-[0.01rem]/[0.04rem]">type</div>
-		<!-- decoration -->
-		<div class="fl-rounded-lg/2xl fl-border-2/8 fl-outline-2/4 fl-ring-2/4">decoration</div>
-		<!-- transform -->
-		<div class="-fl-translate-x-2/6 fl-translate-y-1/4">transform</div>
-		<!-- arbitrary values + px fold -->
-		<div class="fl-p-[16px]/[2rem] fl-m-[0.5rem]/[1.5rem]">arbitrary</div>
+			<!-- Spacing family. -->
+			<section class="mb-12">
+				<h2 class="mb-1 text-sm font-semibold tracking-wide text-slate-500 uppercase">
+					Spacing
+				</h2>
+				<p class="mb-4 text-sm text-slate-500">
+					Padding, margin, gap and more scale fluidly —
+					<code class="text-xs">fl-p-4/8 fl-gap-2/6</code>, negatives like
+					<code class="text-xs">-fl-mt-3/5</code>.
+				</p>
+				<div
+					class="fl-p-4/8 flex flex-wrap fl-gap-2/6 rounded-lg border border-slate-200 bg-white"
+				>
+					<span class="rounded bg-slate-100 px-3 py-1 text-sm">fluid padding</span>
+					<span class="rounded bg-slate-100 px-3 py-1 text-sm">fluid gap</span>
+					<span class="rounded bg-slate-100 px-3 py-1 text-sm">between items</span>
+				</div>
+				<!-- Sampling across sizing / decoration / transform / arbitrary families so the
+				     full root list stays exercised by the playground (and test:ls). -->
+				<div class="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-500">
+					<span class="fl-mx-2/6 -fl-mt-3/5 fl-space-x-2/6">margin</span>
+					<span class="fl-w-16/32 fl-h-8/16 fl-size-4/8 fl-max-w-24/48 fl-basis-8/16"
+						>sizing</span
+					>
+					<span class="fl-leading-4/8 fl-indent-2/6 fl-tracking-[0.01rem]/[0.04rem]"
+						>type</span
+					>
+					<span class="fl-rounded-lg/2xl fl-border-2/8 fl-outline-2/4 fl-ring-2/4"
+						>decoration</span
+					>
+					<span class="-fl-translate-x-2/6 fl-translate-y-1/4">transform</span>
+					<span class="fl-p-[16px]/[2rem] fl-m-[0.5rem]/[1.5rem]"
+						>arbitrary + px fold</span
+					>
+				</div>
+			</section>
 
-		<!-- (M4) fluid theme tokens (--fl-* namespace): pair in the value position,
-		     no slash end. --fl-display: 2rem 4rem; --fl-gutter: 0.5rem 2rem. -->
-		<div class="fl-text-display fl-p-gutter">theme tokens</div>
+			<!-- Viewport range variants. -->
+			<section class="mb-12">
+				<h2 class="mb-1 text-sm font-semibold tracking-wide text-slate-500 uppercase">
+					Viewport ranges
+				</h2>
+				<p class="mb-4 text-sm text-slate-500">
+					A range variant retunes the interpolation window:
+					<code class="text-xs">fl-md/lg:</code> (md→lg),
+					<code class="text-xs">fl-md:</code> (start only),
+					<code class="text-xs">fl/lg:</code> (end only).
+				</p>
+				<div class="space-y-2 rounded-lg border border-slate-200 bg-white p-6">
+					<div class="fl-md/lg:fl-text-sm/xl">range md→lg</div>
+					<div class="fl-md:fl-text-sm/xl">start only (md → default max)</div>
+					<div class="fl/lg:fl-text-sm/xl">end only (default min → lg)</div>
+				</div>
+			</section>
 
-		<!-- (M4) WCAG 1.4.4 zoom-safety check on font-size pairs.
-		     PASSING pair (gentle slope) — emits a fluid font-size: -->
-		<p class="fl-text-base/3xl">sc144-safe fluid heading</p>
-		<!-- FAILING pair (too steep for 5x zoom) — REJECTED: emits no fluid font-size,
-		     only `--tw-fl-error: "fails-sc-144: …"`. Kept behind this comment so the
-		     fixture documents the failure without shipping a broken utility:
-		<p class="fl-text-sm/5xl">sc144-unsafe (rejected)</p>
-		-->
-		<!-- disable per-project via `@plugin "tailwindcss-fluid" { checkSC144: false }` -->
+			<!-- Container-query range variant + 100cqw swap. -->
+			<section class="mb-12">
+				<h2 class="mb-1 text-sm font-semibold tracking-wide text-slate-500 uppercase">
+					Container ranges
+				</h2>
+				<p class="mb-4 text-sm text-slate-500">
+					<code class="text-xs">@fl-md/lg:</code> interpolates on the container's width
+					(28rem→32rem), not the viewport. Drag the handle to resize.
+				</p>
+				<!-- #container stays padding/border-free: container-query units (100cqw)
+				     resolve against its content box, so any padding here would shrink the
+				     measured width. The visible card is the inner wrapper. -->
+				<div
+					id="container"
+					class="resize-x overflow-auto"
+					style="
+						container-type: inline-size;
+						width: 800px;
+						min-width: 240px;
+						max-width: 100%;
+					"
+				>
+					<div class="rounded-lg border border-slate-200 bg-white p-6">
+						<h2
+							id="container-type"
+							class="@fl-md/lg:fl-text-sm/xl font-semibold text-slate-900"
+						>
+							Fluid container type
+						</h2>
+					</div>
+				</div>
+			</section>
 
-		<!-- (3) viewport range variants -->
-		<div class="fl-md/lg:fl-text-sm/xl">range md→lg</div>
-		<div class="fl-md:fl-text-sm/xl">start only</div>
-		<div class="fl/lg:fl-text-sm/xl">end only</div>
+			<!-- Fluid theme tokens (--fl-* namespace): a rem pair in the value position, no slash.
+			     --fl-display: 2rem 4rem; --fl-gutter: 0.5rem 2rem. (defined in src/app.css) -->
+			<section class="mb-12">
+				<h2 class="mb-1 text-sm font-semibold tracking-wide text-slate-500 uppercase">
+					Theme tokens
+				</h2>
+				<p class="mb-4 text-sm text-slate-500">
+					Reusable <code class="text-xs">--fl-*</code> pairs:
+					<code class="text-xs">fl-text-display</code> (2rem→4rem),
+					<code class="text-xs">fl-p-gutter</code> (0.5rem→2rem).
+				</p>
+				<div class="fl-p-gutter rounded-lg border border-slate-200 bg-white">
+					<span class="fl-text-display font-semibold text-slate-900">Display</span>
+				</div>
+			</section>
 
-		<!-- (4)(6) container-query range variant + 100cqw swap -->
-		<div id="container" style="container-type: inline-size; width: 800px">
-			<h2 id="container-type" class="@fl-md/lg:fl-text-sm/xl">Fluid container type</h2>
-		</div>
+			<!-- WCAG 1.4.4 zoom-safety check on font-size pairs. -->
+			<section class="mb-12">
+				<h2 class="mb-1 text-sm font-semibold tracking-wide text-slate-500 uppercase">
+					WCAG 1.4.4 zoom safety
+				</h2>
+				<p class="mb-4 text-sm text-slate-500">
+					A gentle slope passes and emits a fluid font-size. A pair too steep for 5× zoom
+					is rejected (only a <code class="text-xs">--tw-fl-error</code> is emitted) — see
+					the commented example in the source.
+				</p>
+				<div class="rounded-lg border border-slate-200 bg-white p-6">
+					<p class="fl-text-base/3xl font-semibold text-slate-900">
+						sc144-safe fluid heading
+					</p>
+				</div>
+				<!-- FAILING pair (too steep for 5x zoom) — REJECTED: emits no fluid font-size,
+				     only `--tw-fl-error: "fails-sc-144: …"`. Kept behind this comment so the
+				     fixture documents the failure without shipping a broken utility:
+				<p class="fl-text-sm/5xl">sc144-unsafe (rejected)</p>
+				-->
+				<!-- disable per-project via `@plugin "tailwindcss-fluid" { checkSC144: false }` -->
+			</section>
 
-		<!-- (M3) element-scope containment: a ranged parent must NOT leak its range to
-		     a child (proves the engine vars' `inherits: false`). The child uses the
-		     default range, the parent the md→lg range, so their sizes differ. -->
-		<div id="scope-parent" class="fl-md/lg:fl-text-sm/xl">
-			ranged parent
-			<span id="scope-child" class="fl-text-sm/xl">default-range child</span>
-		</div>
-
-		<!-- (M3) element-scope retune: one range variant retunes EVERY fluid utility on
-		     the element — the padding (no variant of its own) is ranged md→lg too. -->
-		<div id="scope-element" class="fl-md/lg:fl-text-sm/xl fl-p-4/8">retuned padding</div>
-
-		<!-- (M3) last-in-cascade-wins: two range variants on one element don't compose;
-		     the whole element takes one range (whichever wins the cascade). -->
-		<div id="last-wins" class="fl-sm/md:fl-text-sm/xl fl-lg/2xl:fl-text-sm/xl">last wins</div>
+			<!-- Element-scope caveat: a range variant retunes EVERY fluid utility on the element,
+			     `inherits: false` contains it to that element, and two ranges don't compose. -->
+			<section class="mb-4">
+				<h2 class="mb-1 text-sm font-semibold tracking-wide text-slate-500 uppercase">
+					The element-scope caveat
+				</h2>
+				<p class="mb-4 text-sm text-slate-500">
+					Ranges live in element-level custom properties, so one variant retunes the whole
+					element — but <code class="text-xs">inherits: false</code> stops it leaking to
+					descendants, and two ranges don't compose (last in the cascade wins).
+				</p>
+				<div class="space-y-4 rounded-lg border border-slate-200 bg-white p-6">
+					<!-- containment: a ranged parent must NOT leak its range to a plain-utility child. -->
+					<div id="scope-parent" class="fl-md/lg:fl-text-sm/xl text-slate-900">
+						ranged parent (md→lg)
+						<span id="scope-child" class="fl-text-sm/xl text-slate-500">
+							· default-range child (does not inherit the parent's range)
+						</span>
+					</div>
+					<!-- retune: the padding (no variant of its own) is ranged md→lg too. -->
+					<div
+						id="scope-element"
+						class="fl-md/lg:fl-text-sm/xl fl-p-4/8 bg-slate-50 text-slate-900"
+					>
+						one variant retunes this element's padding as well as its text
+					</div>
+					<!-- last-in-cascade-wins: two range variants don't compose. -->
+					<div
+						id="last-wins"
+						class="fl-sm/md:fl-text-sm/xl fl-lg/2xl:fl-text-sm/xl text-slate-900"
+					>
+						two ranges on one element — the cascade winner takes the whole element
+					</div>
+				</div>
+			</section>
+		</main>
 
 		<script type="module" src="/src/main.ts"></script>
 	</body>
