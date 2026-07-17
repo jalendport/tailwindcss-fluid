@@ -2,9 +2,29 @@
 	"name": "tailwindcss-fluid",
 	"version": "0.0.0",
 	"description": "Fluid clamp() utilities and range variants for Tailwind CSS v4.",
+	"keywords": [
+		"tailwindcss",
+		"tailwind",
+		"tailwind-plugin",
+		"tailwindcss-plugin",
+		"fluid",
+		"clamp",
+		"fluid-typography",
+		"responsive",
+		"container-queries",
+		"css"
+	],
 	"license": "MIT",
 	"author": "Jalen Davenport",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/jalendport/tailwindcss-fluid.git",
+		"directory": "packages/fluid-tailwind"
+	},
+	"homepage": "https://github.com/jalendport/tailwindcss-fluid#readme",
+	"bugs": "https://github.com/jalendport/tailwindcss-fluid/issues",
 	"type": "module",
+	"sideEffects": false,
 	"main": "./dist/index.mjs",
 	"module": "./dist/index.mjs",
 	"exports": {
@@ -13,7 +33,9 @@
 		}
 	},
 	"files": [
-		"dist"
+		"dist",
+		"README.md",
+		"LICENSE"
 	],
 	"scripts": {
 		"build": "tsdown",
