@@ -5,11 +5,11 @@
 	"license": "MIT",
 	"author": "Jalen Davenport",
 	"type": "module",
-	"main": "./dist/index.js",
-	"module": "./dist/index.js",
+	"main": "./dist/index.mjs",
+	"module": "./dist/index.mjs",
 	"exports": {
 		".": {
-			"import": "./dist/index.js"
+			"import": "./dist/index.mjs"
 		}
 	},
 	"files": [

@@ -3,7 +3,14 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
 	{
-		ignores: ['**/dist/**', '**/node_modules/**', 'playground/**/*.js', 'playground/**/*.d.ts'],
+		ignores: [
+			'**/dist/**',
+			'**/node_modules/**',
+			'playground/**/*.js',
+			'playground/**/*.d.ts',
+			// Throwaway browser/LSP verification scripts (node + injected browser globals).
+			'playground/scripts/**',
+		],
 	},
 	js.configs.recommended,
 	...tseslint.configs.recommendedTypeChecked,

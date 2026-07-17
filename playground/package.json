@@ -7,9 +7,11 @@
 		"dev": "vite",
 		"build": "vite build",
 		"preview": "vite preview",
-		"test:e2e": "node ./scripts/verify-clamp.mjs"
+		"test:e2e": "node ./scripts/verify-clamp.mjs",
+		"test:ls": "node ./scripts/verify-intellisense.mjs"
 	},
 	"devDependencies": {
+		"@tailwindcss/language-server": "^0.14.29",
 		"@tailwindcss/vite": "^4.3.3",
 		"playwright": "^1.50.0",
 		"tailwindcss": "^4.3.3",

@@ -43,6 +43,19 @@ function themeMap(raw: unknown): Record<string, string> {
 	return out;
 }
 
+/**
+ * A non-null "this candidate is invalid" result.
+ *
+ * SPIKE FINDING: a v4 `matchUtilities` handler must NOT return `null`/`undefined`
+ * — the engine unconditionally runs `Object.entries()` on the result, so `null`
+ * throws "Cannot convert undefined or null to object". Crucially this fires during
+ * the language server's full class-list enumeration (it compiles every root with
+ * no modifier), which crashes the whole design system and kills IntelliSense. So
+ * the fluid roots — which require a slash modifier — emit an error declaration
+ * instead of bailing with null. (v3 relied on null-to-skip; v4 removed that.)
+ */
+const missingEnd = (): Record<string, string> => ({ '--tw-fl-error': '"missing-end"' });
+
 /** Emit the runtime clamp formula for a start/end pair of rem lengths (endpoints inlined). */
 function clamp(startRem: number, endRem: number): string {
 	const lo = Math.min(startRem, endRem);
@@ -100,7 +113,7 @@ export default plugin.withOptions<FluidOptions | undefined>((options = {}) => {
 		matchUtilities(
 			{
 				'fl-text': (value: string, extra: { modifier: string | null }) => {
-					if (!extra.modifier) return null;
+					if (!extra.modifier) return missingEnd();
 					const endRaw = textScale[extra.modifier] ?? extra.modifier;
 					return {
 						'font-size': clamp(toRemNumber(value), toRemNumber(endRaw)),
@@ -122,7 +135,7 @@ export default plugin.withOptions<FluidOptions | undefined>((options = {}) => {
 		matchUtilities(
 			{
 				'fl-mt': (value: string, extra: { modifier: string | null }) => {
-					if (!extra.modifier) return null;
+					if (!extra.modifier) return missingEnd();
 					const start = toRemNumber(value);
 					// Modifier rides the same spacing scale; sign follows the start value.
 					const endMagnitude = toRemNumber(
