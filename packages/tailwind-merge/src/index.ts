@@ -88,16 +88,23 @@ function remOption(raw: string | number | undefined, fallback: number): number {
 	return (m[2]?.toLowerCase() ?? 'rem') === 'px' ? n / 16 : n;
 }
 
-/** Whether an arbitrary value (`[…]` stripped) folds to a literal rem/px length. */
-function isFoldableLength(inner: string): boolean {
+/**
+ * Fold an arbitrary value (`[…]` stripped) to a unitless rem number (16px/rem); null
+ * if it isn't a literal rem/px length. The plugin's `toRem` only keeps rem, px, and a
+ * unit-free zero; every other unit raises `unsupported-unit` and emits no property.
+ */
+function foldLength(inner: string): number | null {
 	const m = REM_PX_LENGTH.exec(inner);
-	if (!m) return false;
+	if (!m) return null;
 	const n = parseFloat(m[1]!);
-	if (isNaN(n)) return false;
-	// The plugin's `toRem` only keeps rem, px, and a unit-free zero; every other
-	// unit raises `unsupported-unit` and emits no property. Mirror that exactly.
-	return n === 0 || m[2] != null;
+	if (isNaN(n)) return null;
+	if (n === 0) return 0; // unit-free zero folds; `[0rem]` ≡ `[0px]` ≡ `[0]`
+	if (m[2] == null) return null; // a non-zero literal needs a rem/px unit
+	return m[2].toLowerCase() === 'px' ? n / 16 : n;
 }
+
+/** Whether an arbitrary value (`[…]` stripped) folds to a literal rem/px length. */
+const isFoldableLength = (inner: string): boolean => foldLength(inner) !== null;
 
 /** Whether a value channel is a Tailwind arbitrary value (`[…]`). */
 const isArbitrary = (value: string): boolean => value.startsWith('[') && value.endsWith(']');
@@ -255,12 +262,22 @@ export function withFluid<
 		//    tailwind-merge class group — are never grouped.
 		if (!FLUID_ROOTS.has(a.root)) return false;
 
-		// 2. No-change. Identical endpoints in the same channel form (`fl-p-4/4`,
-		//    `fl-p-[1rem]/[1rem]`) fold to `no-change` — the plugin emits no property.
-		if (a.startValue === endValue) return false;
-
 		const startArb = isArbitrary(a.startValue);
 		const endArb = isArbitrary(endValue);
+
+		// 2. No-change. The plugin folds each endpoint to a rem number (px at 16, zero
+		//    unit-agnostic) and emits no property when they match. For two arbitrary
+		//    literals, compare those folded numbers so `fl-p-[16px]/[1rem]` and
+		//    `fl-p-[0rem]/[0px]` read as no-change (`fl-p-[1.0rem]/[1rem]` too — numeric,
+		//    not string, equality). Named or mixed channels can't be folded statically,
+		//    so raw-string equality (`fl-p-4/4`, `fl-p-[1rem]/[1rem]`) stays correct there.
+		if (startArb && endArb) {
+			const start = foldLength(a.startValue.slice(1, -1));
+			const end = foldLength(endValue.slice(1, -1));
+			if (start !== null && end !== null && start === end) return false;
+		} else if (a.startValue === endValue) {
+			return false;
+		}
 
 		// 3. `fl-text` arbitrary forms. The plugin supports no arbitrary font-size pair
 		//    (`fl-text-[1rem]/[2rem]` resolves neither endpoint to a text key, so no

@@ -139,6 +139,21 @@ describe('the gate encodes the plugin surface, not just core (M7 fix 1)', () => 
 		expect(twMerge('p-2 fl-p-[1rem]/[1rem]')).toBe('p-2 fl-p-[1rem]/[1rem]');
 	});
 
+	it('normalized-equal arbitrary endpoints fold to no-change (both kept)', () => {
+		// The plugin folds px→rem before comparing, so these equal-length pairs emit
+		// only `no-change`; grouping would delete the real `p-2` fallback (M8 fix).
+		expect(twMerge('p-2 fl-p-[16px]/[1rem]')).toBe('p-2 fl-p-[16px]/[1rem]');
+		expect(twMerge('p-2 fl-p-[0rem]/[0px]')).toBe('p-2 fl-p-[0rem]/[0px]');
+		// Numeric, not string, equality: `1.0rem` ≡ `1rem`.
+		expect(twMerge('p-2 fl-p-[1.0rem]/[1rem]')).toBe('p-2 fl-p-[1.0rem]/[1rem]');
+	});
+
+	it('normalized-unequal arbitrary endpoints still group', () => {
+		// `32px` (2rem) ≠ `1rem`, and `0px` ≠ `4px` — real padding is emitted.
+		expect(twMerge('p-2 fl-p-[32px]/[1rem]')).toBe('fl-p-[32px]/[1rem]');
+		expect(twMerge('p-2 fl-p-[0px]/[4px]')).toBe('fl-p-[0px]/[4px]');
+	});
+
 	it('non-rem/px arbitrary endpoints stay ungrouped (both kept)', () => {
 		// `[1em]`/`[2em]` raise `unsupported-unit`; no padding is emitted.
 		expect(twMerge('p-2 fl-p-[1em]/[2em]')).toBe('p-2 fl-p-[1em]/[2em]');
