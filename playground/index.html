@@ -36,6 +36,22 @@
 			<h2 id="container-type" class="@fl-md/lg:fl-text-sm/xl">Fluid container type</h2>
 		</div>
 
+		<!-- (M3) element-scope containment: a ranged parent must NOT leak its range to
+		     a child (proves the engine vars' `inherits: false`). The child uses the
+		     default range, the parent the md→lg range, so their sizes differ. -->
+		<div id="scope-parent" class="fl-md/lg:fl-text-sm/xl">
+			ranged parent
+			<span id="scope-child" class="fl-text-sm/xl">default-range child</span>
+		</div>
+
+		<!-- (M3) element-scope retune: one range variant retunes EVERY fluid utility on
+		     the element — the padding (no variant of its own) is ranged md→lg too. -->
+		<div id="scope-element" class="fl-md/lg:fl-text-sm/xl fl-p-4/8">retuned padding</div>
+
+		<!-- (M3) last-in-cascade-wins: two range variants on one element don't compose;
+		     the whole element takes one range (whichever wins the cascade). -->
+		<div id="last-wins" class="fl-sm/md:fl-text-sm/xl fl-lg/2xl:fl-text-sm/xl">last wins</div>
+
 		<script type="module" src="/src/main.ts"></script>
 	</body>
 </html>

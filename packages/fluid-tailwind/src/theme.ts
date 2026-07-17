@@ -60,9 +60,12 @@ export interface FluidTheme {
 	/** Length-filtered named value maps, one per scale family. */
 	scales: Record<ScaleName, Record<string, string>>;
 	text: Record<string, FluidText>;
-	/** Smallest / largest breakpoint as unitless rem numbers (default range). */
+	/** Smallest / largest breakpoint as unitless rem numbers (viewport default range). */
 	defaultMin: number;
 	defaultMax: number;
+	/** Smallest / largest container token as unitless rem numbers (container default range). */
+	containerMin: number;
+	containerMax: number;
 	/** Resolve a named breakpoint to a unitless rem number (`bp-not-found` if missing). */
 	resolveBreakpoint(kind: 'breakpoint' | 'containers', name: string): number;
 }
@@ -189,6 +192,14 @@ export function resolveTheme(theme: ThemeFn): FluidTheme {
 	const defaultMin = bpNumbers.length ? Math.min(...bpNumbers) : 40;
 	const defaultMax = bpNumbers.length ? Math.max(...bpNumbers) : 96;
 
+	// Container range defaults come from the smallest→largest `--container-*` token
+	// (PLAN: "container-default range = smallest→largest container token"), resolved
+	// independently of the viewport `min-screen`/`max-screen` options. Falls back to
+	// the viewport range only if no rem-resolvable container tokens exist.
+	const cNumbers = Object.values(containers).filter(remResolvable).map(remNumber);
+	const containerMin = cNumbers.length ? Math.min(...cNumbers) : defaultMin;
+	const containerMax = cNumbers.length ? Math.max(...cNumbers) : defaultMax;
+
 	return {
 		breakpoints,
 		containers,
@@ -197,6 +208,8 @@ export function resolveTheme(theme: ThemeFn): FluidTheme {
 		text,
 		defaultMin,
 		defaultMax,
+		containerMin,
+		containerMax,
 		resolveBreakpoint(kind, name) {
 			const map = kind === 'containers' ? containers : breakpoints;
 			const len = map[name];

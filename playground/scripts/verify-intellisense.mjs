@@ -94,6 +94,8 @@ const doc = [
 	'<div class="fl-text-"></div>',
 	'<div class="fl-md/lg:"></div>',
 	'<div class="fl-text-sm/xl"></div>',
+	'<div class="@fl-md:"></div>',
+	'<div class="fl-"></div>',
 	'</body></html>',
 	'',
 ].join('\n');
@@ -154,17 +156,39 @@ try {
 		textDocument: { uri },
 		position: { line: 4, character: 18 },
 	});
+	// Completion inside `class="@fl-md:|"` (line index 5) — proves the container
+	// variant prefix parses and offers utilities under it.
+	const containerVariantCompletion = await request('textDocument/completion', {
+		textDocument: { uri },
+		position: { line: 5, character: 18 },
+	});
+	// Completion inside `class="fl-|"` (line index 6) — the variant STUBS the LS
+	// offers for the range variants themselves.
+	const variantStubCompletion = await request('textDocument/completion', {
+		textDocument: { uri },
+		position: { line: 6, character: 15 },
+	});
 
 	const utilLabels = labels(utilCompletion.result);
 	const variantLabels = labels(variantCompletion.result);
+	const containerVariantLabels = labels(containerVariantCompletion.result);
+	const stubLabels = labels(variantStubCompletion.result);
 	const flTextItems = utilLabels.filter((l) => l.startsWith('fl-text'));
 	const flVariantItems = variantLabels.filter((l) => l.startsWith('fl') || l.includes('fl-'));
+	// Variant stubs read as `…:`-suffixed entries or the arbitrary `fl-[]:` / `@fl-[]:` forms.
+	const variantStubs = stubLabels.filter((l) => /(^@?fl.*:$|fl-\[\]:)/.test(l));
 	const hoverText = JSON.stringify(hover.result?.contents ?? null);
 
 	console.log('util completion items total:', utilLabels.length);
 	console.log('  fl-text* completions sample:', flTextItems.slice(0, 12));
 	console.log('variant completion items total:', variantLabels.length);
 	console.log('  fl* variant/utility completions sample:', flVariantItems.slice(0, 12));
+	console.log('@fl-md: container-variant completion items total:', containerVariantLabels.length);
+	console.log(
+		'  under @fl-md: sample:',
+		containerVariantLabels.filter((l) => l.startsWith('fl')).slice(0, 8),
+	);
+	console.log('variant stubs offered after `fl-`:', variantStubs.slice(0, 20));
 	console.log('hover over fl-text-sm/xl:', hoverText.slice(0, 400));
 
 	const utilOk = flTextItems.length > 0;
