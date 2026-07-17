@@ -10,33 +10,48 @@
 
 import type { Length } from './css';
 
+// Every message is one actionable sentence, no leading code (the surface prepends
+// `code: `). Say what to do, not just what's wrong. Codes are the stable public
+// contract (tests + tailwind-merge key off them); reword freely, never rename.
 export const codes = {
-	'missing-start': () => 'Missing start value',
-	'missing-end': () => 'Missing end value',
-	'non-length-start': (start: string) => `Start value \`${start}\` is not a length`,
-	'non-length-end': (end: string) => `End value \`${end}\` is not a length`,
+	'missing-start': () => 'Add a start value before the `/` (e.g. `fl-p-4/8`)',
+	'missing-end': () => 'A fluid range needs a `/end` value (e.g. `fl-p-4/8`)',
+	'non-length-start': (start: string) =>
+		`Start \`${start}\` isn't a length — use a theme key or a bracketed length like \`[1rem]\``,
+	'non-length-end': (end: string) =>
+		`End \`${end}\` isn't a length — use a theme key or a bracketed length like \`[2rem]\``,
+	// Dormant under the rem/px-fold unit policy (px folds to rem, so two
+	// rem-resolvable endpoints always reconcile). Kept for completeness;
+	// `unsupported-unit` is what fires now. See PLAN's 2026-07-17 amendment.
 	'mismatched-units': (start: Length, end: Length) =>
-		`Start \`${start.cssText}\` and end \`${end.cssText}\` units don't match`,
+		`Start \`${start.cssText}\` and end \`${end.cssText}\` use different units`,
 	// The runtime formula's interpolation term is rem-denominated (unitless slope ×
 	// rem length), so only rem-resolvable endpoints can interpolate: rem native, px
 	// folded at 16px/rem. Any other unit (em, ch, lh, …) on a differing endpoint is
 	// dimensionally wrong — see PLAN's 2026-07-17 unit-policy amendment.
 	'unsupported-unit': (val: Length) =>
-		`Unit of \`${val.cssText}\` can't interpolate fluidly (only rem and px are rem-resolvable)`,
-	'no-change': (val: Length) => `Start and end values are both \`${val.cssText}\``,
+		`\`${val.cssText}\` can't interpolate fluidly — use rem or px (other units aren't rem-resolvable)`,
+	'no-change': (val: Length) =>
+		`Start and end are both \`${val.cssText}\` — a fluid range needs two different values`,
 	// Fluid theme tokens (`--fl-*`): a token carries BOTH ends, so it takes no slash
 	// end and can't sit in the end channel, and it must be a two-value rem pair.
 	'token-not-pair': (val: string) =>
-		`Fluid token \`${val}\` must be two rem-resolvable values (e.g. \`2rem 4rem\`)`,
+		`Fluid token \`${val}\` must be exactly two rem-resolvable values (e.g. \`2rem 4rem\`)`,
 	'token-with-end': (val: string) =>
-		`Fluid token \`${val}\` already sets both ends — drop the \`/…\` modifier`,
-	'token-as-end': (name: string) => `Fluid token \`${name}\` can't be used as a range end`,
-	'bp-not-found': (key: string, name: string) => `Could not find \`theme.${key}.${name}\``,
-	'no-utility': () => 'Fluid variants can only be used with fluid utilities',
-	'mismatched-font-weights': () => 'Mismatched font weights',
+		`Fluid token \`${val}\` already sets both ends — drop the trailing \`/…\``,
+	'token-as-end': (name: string) =>
+		`Fluid token \`${name}\` can't be a range end — a token already carries both ends`,
+	'bp-not-found': (key: string, name: string) =>
+		`No \`${name}\` in \`theme.${key}\` — use a defined breakpoint or an arbitrary length like \`[24rem]\``,
+	'no-utility': () =>
+		'Fluid variants only apply to fluid utilities (e.g. `fl-md/lg:fl-text-sm/xl`)',
+	'mismatched-font-weights': () =>
+		"The two font-size endpoints have different font weights, which can't interpolate — give them matching weights",
 	// WCAG 1.4.4 zoom-safety failure on a fluid font-size pair (see sc144.ts). The
 	// utility emits no fluid font-size when this fires, only this error surface.
-	'fails-sc-144': (failingBp: Length) => `Fails WCAG SC 1.4.4 at i.e. ${failingBp.cssText}`,
+	// `failingBp` is the viewport width (rem) where the range stops enlarging enough.
+	'fails-sc-144': (failingBp: Length) =>
+		`Font-size range fails WCAG SC 1.4.4 (Resize Text): too shallow to reach 200% at 5× zoom near ${failingBp.cssText} — widen the range or set \`checkSC144: false\``,
 } satisfies Record<string, (...args: never[]) => string>;
 
 export type ErrorCode = keyof typeof codes;
