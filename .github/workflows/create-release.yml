@@ -1,9 +1,18 @@
 name: create-release
 
+# Tag-driven, two channels (mirroring the owner's vscode-twig-toolbox workflow):
+#   v1.2.0        → GitHub release, body = the CHANGELOG.md section for that version
+#   v1.2.0-beta.1 → GitHub *pre-release*, body = auto-generated release notes
+#
+# The tag is validated against strict SemVer in-shell BEFORE any release work, so a
+# malformed tag (v1.2.3oops, v1.2.3.4, v1.2) fails loudly instead of publishing the
+# wrong kind of release off a typo. The broad `v*` trigger is intentional: it lets
+# malformed tags reach the validation step and fail there, rather than being silently
+# ignored by a glob.
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'
+      - 'v*'
 
 permissions:
   contents: write
@@ -14,28 +23,68 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pull the release notes straight from CHANGELOG.md: extract the section whose
-      # heading matches the tag (minus the leading `v`), stopping at the next `## `.
-      # Fail the run if that section is missing — write the release notes (rename
-      # `## Unreleased` to `## <version>`) before tagging.
-      - name: Extract release notes from CHANGELOG.md
+      # Validate the tag and resolve the channel before anything else. A tag must be
+      # vMAJOR.MINOR.PATCH with an optional prerelease suffix; anything else fails.
+      - name: Resolve release channel
+        id: channel
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          awk -v ver="$version" '
-            $0 ~ "^## " ver "([ ]|$)" { flag = 1; next }
-            /^## / { flag = 0 }
-            flag { print }
-          ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "::error::No CHANGELOG.md section for $version — write the release notes before tagging."
+          set -euo pipefail
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9][0-9]*|[0-9]*[a-zA-Z-][0-9a-zA-Z-]*))*))?$'
+          if ! printf '%s' "$REF_NAME" | grep -Eq "$semver"; then
+            echo "::error::Tag '$REF_NAME' is not vMAJOR.MINOR.PATCH[-prerelease] — refusing to release from a malformed tag."
             exit 1
           fi
+
+          version="${REF_NAME#v}"
+          base="${version%%-*}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "$base" != "$version" ]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "Channel: GitHub pre-release ($version) — notes auto-generated."
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "Channel: stable release ($version) — notes from CHANGELOG.md."
+          fi
+
+      # Stable releases carry the hand-written CHANGELOG.md section as their body. The
+      # heading is matched LITERALLY (awk `index()` / string comparison), never as an
+      # interpolated regex — so the dots in `0.1.0` are literal, and a decoy heading
+      # like `## 1x2y3` can never match the tag `v1.2.3`. A missing section fails.
+      - name: Extract release notes from CHANGELOG.md
+        if: steps.channel.outputs.prerelease == 'false'
+        env:
+          TAG_VERSION: ${{ steps.channel.outputs.version }}
+        run: |
+          set -euo pipefail
+          awk -v version="$TAG_VERSION" '
+            /^## / {
+              if (found) exit
+              if ($2 == version || index($0, "[" version "]") > 0) { found = 1; next }
+            }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "::error::CHANGELOG.md has no section for $TAG_VERSION — write the release notes (rename '## Unreleased' to '## $TAG_VERSION') before tagging."
+            exit 1
+          fi
+          echo "Release notes extracted ($(wc -l < release-notes.md) lines)."
           cat release-notes.md
 
-      # No npm publish step: publishing is deferred until the package-name decision
-      # is made (the placeholders `tailwindcss-fluid` / `@tailwindcss-fluid/tailwind-merge`
+      # No npm publish step: publishing is deferred until the package-name decision is
+      # made (the placeholders `tailwindcss-fluid` / `@tailwindcss-fluid/tailwind-merge`
       # are not yet claimed). Add the publish job here once the names are settled.
-      - name: Create GitHub release
+      - name: Create GitHub release (stable)
+        if: steps.channel.outputs.prerelease == 'false'
         uses: softprops/action-gh-release@v2
         with:
           body_path: release-notes.md
+          prerelease: false
+
+      - name: Create GitHub pre-release
+        if: steps.channel.outputs.prerelease == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          prerelease: true
