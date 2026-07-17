@@ -1,0 +1,16 @@
+# Local planning docs — never commit these
+PLAN.md
+.briefs/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Logs & OS noise
+*.log
+.DS_Store
+
+# Solo
+solo.yml
