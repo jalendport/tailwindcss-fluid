@@ -24,6 +24,13 @@ export const codes = {
 	'unsupported-unit': (val: Length) =>
 		`Unit of \`${val.cssText}\` can't interpolate fluidly (only rem and px are rem-resolvable)`,
 	'no-change': (val: Length) => `Start and end values are both \`${val.cssText}\``,
+	// Fluid theme tokens (`--fl-*`): a token carries BOTH ends, so it takes no slash
+	// end and can't sit in the end channel, and it must be a two-value rem pair.
+	'token-not-pair': (val: string) =>
+		`Fluid token \`${val}\` must be two rem-resolvable values (e.g. \`2rem 4rem\`)`,
+	'token-with-end': (val: string) =>
+		`Fluid token \`${val}\` already sets both ends — drop the \`/…\` modifier`,
+	'token-as-end': (name: string) => `Fluid token \`${name}\` can't be used as a range end`,
 	'bp-not-found': (key: string, name: string) => `Could not find \`theme.${key}.${name}\``,
 	'no-utility': () => 'Fluid variants can only be used with fluid utilities',
 	'mismatched-font-weights': () => 'Mismatched font weights',

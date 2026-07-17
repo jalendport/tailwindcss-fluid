@@ -29,6 +29,9 @@ const negatedCalc = /^\s*calc\(\s*(.+?)\s*\*\s*-1\s*\)\s*$/;
 export const isNegated = (raw: unknown): boolean =>
 	typeof raw === 'string' && negatedCalc.test(raw);
 
+/** Strip v4's `calc(<x> * -1)` negation wrapper, returning the inner text (or `raw`). */
+export const unnegate = (raw: string): string => negatedCalc.exec(raw)?.[1] ?? raw;
+
 export class Length {
 	constructor(
 		public number: number,

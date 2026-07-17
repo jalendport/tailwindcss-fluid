@@ -8,7 +8,7 @@
 // every root with no modifier, so a null return crashes the whole design system.
 
 import type plugin from 'tailwindcss/plugin';
-import { isNegated, Length } from './css';
+import { isNegated, Length, unnegate } from './css';
 import { error, errorDecl, FluidError } from './errors';
 import { generate } from './expr';
 import { checkFontSizeSC144, type SC144 } from './sc144';
@@ -52,6 +52,28 @@ const assignEmitter =
 	(clamp) =>
 		Object.fromEntries(properties.map((p) => [p, clamp]));
 
+/**
+ * A fluid theme token in the value channel: a space-separated pair (`2rem 4rem`).
+ * Returns the raw part strings plus whether v4 wrapped it in its negation form
+ * (`-fl-m-gutter` → `calc(2rem 4rem * -1)`). A single-token value (a normal scale
+ * value, or a 1-value token) returns null — that's the ordinary start/end path.
+ */
+function tokenParts(value: string): { parts: string[]; negated: boolean } | null {
+	const negated = isNegated(value);
+	const parts = unnegate(value).trim().split(/\s+/);
+	return parts.length >= 2 ? { parts, negated } : null;
+}
+
+/** Resolve a token's two raw parts to a rem-interpolatable start/end pair (else error). */
+function tokenEndpoints(raw: string, parts: string[], negated: boolean): [Length, Length] {
+	if (parts.length !== 2) error('token-not-pair', raw);
+	const start = Length.parse(parts[0]);
+	const end = Length.parse(parts[1]);
+	if (!start || !end) error('token-not-pair', raw);
+	if (!negated) return [start, end];
+	return [new Length(-start.number, start.unit), new Length(-end.number, end.unit)];
+}
+
 /** Register one fluid root against the plugin API. */
 export function registerRoot(
 	api: PluginAPI,
@@ -68,7 +90,11 @@ function registerLength(
 	theme: FluidTheme,
 	{ root, scale = 'spacing', properties = [], emit, type, negative }: UtilityRoot,
 ): void {
-	const values = theme.scales[scale];
+	// Fluid theme tokens (`--fl-*`) join the scale's named values, so `fl-p-gutter`
+	// registers as a candidate. They resolve to their raw pair string; the handler
+	// detects a token (a space-separated value) and expands it with no slash end.
+	const tokens = theme.fluidTokens;
+	const values = { ...theme.scales[scale], ...tokens };
 	const emitter = emit ?? assignEmitter(properties);
 
 	// Error-surface boundary (review finding 4): a candidate only reaches this
@@ -87,6 +113,18 @@ function registerLength(
 		{
 			[root]: (value, { modifier }): Decls => {
 				try {
+					// Fluid theme token in the value channel (`fl-p-gutter`): it carries
+					// both ends, so it takes NO slash modifier and expands directly.
+					const token = tokenParts(value);
+					if (token) {
+						if (modifier != null) error('token-with-end', value);
+						const [ts, te] = tokenEndpoints(value, token.parts, token.negated);
+						return emitter(generate(ts, te));
+					}
+					// A token can't sit in the end channel (`fl-p-4/gutter`).
+					if (modifier != null && tokens[modifier] != null)
+						error('token-as-end', modifier);
+
 					if (modifier == null) error('missing-end');
 					const start = Length.parse(value);
 					if (!start) error('non-length-start', value);
@@ -119,14 +157,30 @@ function registerFontSize(
 	sc144: SC144 | null,
 ): void {
 	// Identity map: the handler receives the theme key so it can pull the full
-	// tuple (size + line-height/letter-spacing/font-weight sub-values).
-	const values: Record<string, string> = {};
+	// tuple (size + line-height/letter-spacing/font-weight sub-values). Fluid tokens
+	// join in as their raw pair string; a token supplies the SIZE pair only (it has
+	// no tuple), so line-height/letter-spacing fall back to static (unset).
+	const tokens = theme.fluidTokens;
+	const values: Record<string, string> = { ...tokens };
 	for (const key of Object.keys(theme.text)) values[key] = key;
 
 	api.matchUtilities(
 		{
 			[root]: (value, { modifier }) => {
 				try {
+					// Fluid theme token (`fl-text-display`): size pair only, no slash end.
+					const token = tokenParts(value);
+					if (token) {
+						if (modifier != null) error('token-with-end', value);
+						const [ts, te] = tokenEndpoints(value, token.parts, token.negated);
+						const rules: Record<string, string> = {};
+						if (sc144) checkFontSizeSC144(ts, te, sc144);
+						rules['font-size'] = generate(ts, te);
+						return rules;
+					}
+					if (modifier != null && tokens[modifier] != null)
+						error('token-as-end', modifier);
+
 					if (modifier == null) error('missing-end');
 					const from = theme.text[value];
 					if (!from) error('non-length-start', value);

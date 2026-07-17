@@ -60,6 +60,14 @@ export interface FluidTheme {
 	/** Length-filtered named value maps, one per scale family. */
 	scales: Record<ScaleName, Record<string, string>>;
 	text: Record<string, FluidText>;
+	/**
+	 * User fluid theme tokens from the `--fl-*` namespace (`@theme { --fl-display:
+	 * 2rem 4rem }`). Each maps a token name to its raw value; a valid token is a
+	 * space-separated rem-resolvable pair used in a fluid utility's value position
+	 * with no slash end (`fl-text-display`, `fl-p-gutter`). Validation happens at
+	 * emit so a malformed token surfaces a visible error. Empty for the stock theme.
+	 */
+	fluidTokens: Record<string, string>;
 	/** Smallest / largest breakpoint as unitless rem numbers (viewport default range). */
 	defaultMin: number;
 	defaultMax: number;
@@ -179,6 +187,11 @@ export function resolveTheme(theme: ThemeFn): FluidTheme {
 	const containers = lengthMap(theme('containers'));
 	const spacing = stringMap(theme('spacing'));
 	const text = normalizeText(theme('fontSize'));
+	// `--fl-*` tokens. The engine vars (`--fl-bp-min`, `--fl-vw`, …) are registered
+	// via `@property`/addBase, not `@theme`, so they don't appear here — only the
+	// user's fluid pairs do. Kept as raw strings; validated (2 rem-resolvable
+	// values) at emit time so a bad token surfaces a `--tw-fl-error`.
+	const fluidTokens = stringMap(theme('fl'));
 
 	const scales = {} as Record<ScaleName, Record<string, string>>;
 	for (const [name, source] of Object.entries(SCALE_SOURCE) as [ScaleName, string][]) {
@@ -206,6 +219,7 @@ export function resolveTheme(theme: ThemeFn): FluidTheme {
 		spacing,
 		scales,
 		text,
+		fluidTokens,
 		defaultMin,
 		defaultMax,
 		containerMin,
