@@ -1,0 +1,61 @@
+// Ported from barvian/fluid-tailwind (MIT, © Maxwell Barvian)
+// Interpolation math + clamp-formula emitter.
+//
+// v3 knew both breakpoints at build time, so it emitted a fully-computed
+// `clamp(min, intercept + slope·100vw, max)`. This v4 rebuild keeps the range in
+// runtime CSS variables (so range variants can retune it), so the emitted shape
+// is PLAN's "Runtime clamp formula": endpoints inlined, the range carried by the
+// unitless rem-denominated `--fl-bp-min` / `--fl-bp-max` / `--fl-vw` engine vars.
+// The pure numeric semantics — unit reconciliation, zero-unit adoption,
+// no-change/mismatch errors, precision, decreasing-range bound swap — are ported.
+
+import { Length, type RawValue } from './css';
+import { error } from './errors';
+import { precision, toPrecision } from './math';
+
+function toLength(v: Length | RawValue, side: 'start' | 'end'): Length {
+	if (v instanceof Length) return new Length(v.number, v.unit);
+	const len = Length.parse(v);
+	if (!len) error(side === 'start' ? 'non-length-start' : 'non-length-end', String(v ?? ''));
+	return len;
+}
+
+/**
+ * Emit the fluid clamp formula interpolating `rawStart` → `rawEnd` over the engine
+ * variables. Throws a `FluidError` for any invalid pair (the caller surfaces it as
+ * a `--tw-fl-error` declaration). The `--fl-vw` variable is `100vw` by default and
+ * swapped to `100cqw` by the `@fl` container variants (M3), so no unit branch here.
+ */
+export function generate(rawStart: Length | RawValue, rawEnd: Length | RawValue): string {
+	if (rawStart == null || rawStart === '') error('missing-start');
+	if (rawEnd == null || rawEnd === '') error('missing-end');
+
+	let start = toLength(rawStart, 'start');
+	let end = toLength(rawEnd, 'end');
+
+	// Zero adopts the other side's unit; otherwise units must match.
+	if (start.number === 0) start = new Length(0, end.unit);
+	else if (end.number === 0) end = new Length(0, start.unit);
+	else if (!start.unit || start.unit !== end.unit) error('mismatched-units', start, end);
+	const unit = start.unit ?? end.unit ?? '';
+
+	if (start.number === end.number) error('no-change', start);
+
+	// Cap precision so floating-point noise (e.g. a ratio·font-size line-height
+	// like 1.2500000000000002) can't blow up the emitted decimals; 6 is well past
+	// any real length's needed precision.
+	const p = Math.min(Math.max(precision(start.number), precision(end.number), 2), 6);
+	// CSS requires min < max inside clamp(); a decreasing range (start > end) swaps
+	// its clamp bounds here while the interpolation keeps the true direction.
+	const lo = toPrecision(Math.min(start.number, end.number), p);
+	const hi = toPrecision(Math.max(start.number, end.number), p);
+	const from = toPrecision(start.number, p);
+	const slope = toPrecision(end.number - start.number, p);
+
+	const interpolation =
+		`calc(${from}${unit} + (${slope}) * ` +
+		`(var(--fl-vw) - var(--fl-bp-min) * 1rem) / ` +
+		`(var(--fl-bp-max) - var(--fl-bp-min)))`;
+
+	return `clamp(${lo}${unit}, ${interpolation}, ${hi}${unit})`;
+}
