@@ -9,7 +9,7 @@ import { registerVariants } from './variants';
 export interface FluidOptions {
 	'min-screen'?: string;
 	'max-screen'?: string;
-	/** Accepted and stored now; the WCAG 1.4.4 check it gates lands in M4. */
+	/** WCAG 1.4.4 zoom-safety check on fluid font-size pairs. Defaults to on. */
 	checkSC144?: boolean;
 }
 
@@ -54,7 +54,15 @@ const fluid: PluginWithOptions<FluidOptions | undefined> = plugin.withOptions<
 			},
 		});
 
-		for (const root of ROOTS) registerRoot(api, resolved, root);
+		// WCAG 1.4.4 check runs against the default range at utility generation
+		// (per-variant ranges are invisible to the utility — see sc144.ts / PLAN).
+		// Disabled by `checkSC144: false` (also tolerates the string `"false"` the
+		// `@plugin { … }` block may hand through).
+		const sc144Enabled =
+			(opts.checkSC144 as unknown) !== false && (opts.checkSC144 as unknown) !== 'false';
+		const sc144 = sc144Enabled ? { min: defaultMin, max: defaultMax } : null;
+
+		for (const root of ROOTS) registerRoot(api, resolved, root, sc144);
 
 		// Range-variant plumbing (minimal port; full grammar is M3).
 		registerVariants(api, resolved, { defaultMin, defaultMax });

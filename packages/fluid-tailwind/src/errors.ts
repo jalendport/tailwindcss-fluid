@@ -27,8 +27,8 @@ export const codes = {
 	'bp-not-found': (key: string, name: string) => `Could not find \`theme.${key}.${name}\``,
 	'no-utility': () => 'Fluid variants can only be used with fluid utilities',
 	'mismatched-font-weights': () => 'Mismatched font weights',
-	// Stub until M4 wires up the WCAG 1.4.4 zoom check; the code/message exist so
-	// the emitter and error surface are already shaped for it.
+	// WCAG 1.4.4 zoom-safety failure on a fluid font-size pair (see sc144.ts). The
+	// utility emits no fluid font-size when this fires, only this error surface.
 	'fails-sc-144': (failingBp: Length) => `Fails WCAG SC 1.4.4 at i.e. ${failingBp.cssText}`,
 } satisfies Record<string, (...args: never[]) => string>;
 

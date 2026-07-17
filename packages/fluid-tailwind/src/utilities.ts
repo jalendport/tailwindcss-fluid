@@ -11,6 +11,7 @@ import type plugin from 'tailwindcss/plugin';
 import { isNegated, Length } from './css';
 import { error, errorDecl, FluidError } from './errors';
 import { generate } from './expr';
+import { checkFontSizeSC144, type SC144 } from './sc144';
 import type { FluidText, FluidTheme, ScaleName } from './theme';
 
 // PluginAPI isn't exported by tailwindcss; recover it from the plugin handler type.
@@ -52,8 +53,13 @@ const assignEmitter =
 		Object.fromEntries(properties.map((p) => [p, clamp]));
 
 /** Register one fluid root against the plugin API. */
-export function registerRoot(api: PluginAPI, theme: FluidTheme, root: UtilityRoot): void {
-	if (root.kind === 'font-size') registerFontSize(api, theme, root);
+export function registerRoot(
+	api: PluginAPI,
+	theme: FluidTheme,
+	root: UtilityRoot,
+	sc144: SC144 | null,
+): void {
+	if (root.kind === 'font-size') registerFontSize(api, theme, root, sc144);
 	else registerLength(api, theme, root);
 }
 
@@ -106,7 +112,12 @@ function registerLength(
 	);
 }
 
-function registerFontSize(api: PluginAPI, theme: FluidTheme, { root }: UtilityRoot): void {
+function registerFontSize(
+	api: PluginAPI,
+	theme: FluidTheme,
+	{ root }: UtilityRoot,
+	sc144: SC144 | null,
+): void {
 	// Identity map: the handler receives the theme key so it can pull the full
 	// tuple (size + line-height/letter-spacing/font-weight sub-values).
 	const values: Record<string, string> = {};
@@ -121,7 +132,7 @@ function registerFontSize(api: PluginAPI, theme: FluidTheme, { root }: UtilityRo
 					if (!from) error('non-length-start', value);
 					const to = theme.text[modifier];
 					if (!to) error('non-length-end', modifier);
-					return fluidText(from, to);
+					return fluidText(from, to, sc144);
 				} catch (e) {
 					return errorDecl(e);
 				}
@@ -136,11 +147,16 @@ function registerFontSize(api: PluginAPI, theme: FluidTheme, { root }: UtilityRo
 }
 
 /** Build the font-size rule set: interpolate the size + each differing sub-value. */
-function fluidText(from: FluidText, to: FluidText): Record<string, string> {
+function fluidText(from: FluidText, to: FluidText, sc144: SC144 | null): Record<string, string> {
 	const rules: Record<string, string> = {};
 
-	// Font size always interpolates.
+	// Font size always interpolates. When the WCAG 1.4.4 check is enabled it runs
+	// FIRST (v3-faithful): a failing pair rejects the fluid font-size — no
+	// `font-size` is emitted, only the `--tw-fl-error` surface — while the
+	// line-height / letter-spacing sub-values below still generate independently,
+	// exactly as v3 did (only the `type: true` font-size call is gated).
 	try {
+		if (sc144) checkFontSizeSC144(from.fontSize, to.fontSize, sc144);
 		rules['font-size'] = generate(from.fontSize, to.fontSize);
 	} catch (e) {
 		Object.assign(rules, errorDecl(e));
