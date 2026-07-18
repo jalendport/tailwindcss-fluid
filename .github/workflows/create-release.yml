@@ -1,14 +1,25 @@
 name: create-release
 
 # Tag-driven, two channels (mirroring the owner's vscode-twig-toolbox workflow):
-#   v1.2.0        → GitHub release, body = the CHANGELOG.md section for that version
-#   v1.2.0-beta.1 → GitHub *pre-release*, body = auto-generated release notes
+#   v1.2.0        → GitHub release (body = the CHANGELOG.md section) + npm publish to
+#                   the `latest` dist-tag
+#   v1.2.0-beta.1 → GitHub *pre-release* (auto-generated notes)     + npm publish to
+#                   the prerelease dist-tag (`beta`; `next` for an unrecognized id)
 #
 # The tag is validated against strict SemVer in-shell BEFORE any release work, so a
 # malformed tag (v1.2.3oops, v1.2.3.4, v1.2) fails loudly instead of publishing the
 # wrong kind of release off a typo. The broad `v*` trigger is intentional: it lets
 # malformed tags reach the validation step and fail there, rather than being silently
 # ignored by a glob.
+#
+# The committed manifest never carries a prerelease suffix: a stable tag must equal
+# the manifest version exactly, a prerelease tag must match its MAJOR.MINOR.PATCH
+# base, and the full prerelease version is injected at build time only (nothing
+# committed). Ordering is artifact-first: the GitHub release — with the packed npm
+# tarball attached — is created BEFORE npm publish, so a registry hiccup can never
+# block the downloadable artifact. The publish step checks the registry first and
+# skips a version already live, so a re-run after a partial failure retries only what
+# is missing.
 on:
   push:
     tags:
@@ -16,15 +27,32 @@ on:
 
 permissions:
   contents: write
+  id-token: write # npm provenance
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Job level, not step level: a step's `if:` cannot read the `secrets` context.
+    # This is what lets the npm publish skip cleanly before its token is created.
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: pnpm install --frozen-lockfile
+
       # Validate the tag and resolve the channel before anything else. A tag must be
       # vMAJOR.MINOR.PATCH with an optional prerelease suffix; anything else fails.
+      # Stable → npm dist-tag `latest`; prerelease → the leading prerelease identifier
+      # (`beta.1` → `beta`), falling back to `next` for anything unrecognized.
       - name: Resolve release channel
         id: channel
         env:
@@ -40,21 +68,102 @@ jobs:
           version="${REF_NAME#v}"
           base="${version%%-*}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+
           if [ "$base" != "$version" ]; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
-            echo "Channel: GitHub pre-release ($version) — notes auto-generated."
+            ident="${version#*-}"   # the prerelease part, e.g. `beta.1`
+            ident="${ident%%.*}"    # its leading identifier, e.g. `beta`
+            case "$ident" in
+              alpha|beta|rc|next|canary) disttag="$ident" ;;
+              *) disttag="next" ;;
+            esac
+            echo "disttag=$disttag" >> "$GITHUB_OUTPUT"
+            echo "Channel: GitHub pre-release ($version) — npm dist-tag '$disttag', notes auto-generated."
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
-            echo "Channel: stable release ($version) — notes from CHANGELOG.md."
+            echo "disttag=latest" >> "$GITHUB_OUTPUT"
+            echo "Channel: stable release ($version) — npm dist-tag 'latest', notes from CHANGELOG.md."
           fi
+
+      # The committed manifest never carries a prerelease suffix. A stable tag must
+      # match the manifest exactly; a prerelease tag must match on its MAJOR.MINOR.PATCH
+      # base, and the full prerelease version is injected at build time only (below).
+      - name: Verify the tag matches the manifest version
+        env:
+          TAG_VERSION: ${{ steps.channel.outputs.version }}
+          TAG_BASE: ${{ steps.channel.outputs.base }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          manifest_version="$(node -p "require('./packages/fluid-tailwind/package.json').version")"
+          if [ "$PRERELEASE" = "true" ]; then
+            if [ "$manifest_version" != "$TAG_BASE" ]; then
+              echo "::error::Prerelease tag v$TAG_VERSION has base $TAG_BASE but the manifest says $manifest_version — bump the manifest to the version this is a prerelease of."
+              exit 1
+            fi
+            echo "Tag base $TAG_BASE matches the manifest; the full version is injected at build time."
+          else
+            if [ "$manifest_version" != "$TAG_VERSION" ]; then
+              echo "::error::Tag v$TAG_VERSION does not match packages/fluid-tailwind/package.json version $manifest_version"
+              exit 1
+            fi
+            echo "Tag and manifest agree on $TAG_VERSION."
+          fi
+
+      # Build-time only — nothing is committed. npm packs the injected prerelease
+      # semver, so betas are distinguishable published versions and a later stable
+      # (1.0.0 > 1.0.0-beta.N) supersedes them.
+      - name: Inject the prerelease version into the manifest
+        if: steps.channel.outputs.prerelease == 'true'
+        env:
+          TAG_VERSION: ${{ steps.channel.outputs.version }}
+        run: |
+          set -euo pipefail
+          node -e "
+            const fs = require('fs');
+            const path = 'packages/fluid-tailwind/package.json';
+            const manifest = JSON.parse(fs.readFileSync(path, 'utf8'));
+            manifest.version = process.env.TAG_VERSION;
+            fs.writeFileSync(path, JSON.stringify(manifest, null, '\t') + '\n');
+          "
+          echo "Manifest version set to $TAG_VERSION for this build only."
+
+      # The same gates CI runs (ci.yml). A tag does not get to skip them: the tarball
+      # this job publishes is the one users install.
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm test
+
+      # Pack the npm tarball from the built package (respects the manifest `files`).
+      - name: Pack the npm tarball
+        id: pack
+        run: |
+          set -euo pipefail
+          cd packages/fluid-tailwind
+          pnpm pack --pack-destination "$GITHUB_WORKSPACE"
+          path="$(find "$GITHUB_WORKSPACE" -maxdepth 1 -name '*.tgz' -print | head -n 1)"
+          if [ -z "$path" ]; then
+            echo "::error::pnpm pack produced no tarball"
+            exit 1
+          fi
+          echo "path=$path" >> "$GITHUB_OUTPUT"
+          echo "Packed $path ($(du -h "$path" | cut -f1))"
+
+      - name: Upload the npm tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tailwindcss-fluid-${{ github.ref_name }}
+          path: '*.tgz'
+          if-no-files-found: error
 
       # Stable releases carry the hand-written CHANGELOG.md section as their body. The
       # heading's VERSION FIELD is matched literally (awk field comparison), never as
-      # an interpolated regex or a substring — so the dots in `0.1.0` are literal, a
-      # decoy like `## 1x2y3` can't match `v1.2.3`, and `## Next [1.2.3] notes` can't
-      # be mistaken for the real `## [1.2.3] - 2026-07-17`. Both the bare
-      # (`## 1.2.3`) and Keep-a-Changelog bracketed (`## [1.2.3] - <date>`) heading
-      # styles are accepted; field 2 is the version either way. A missing section fails.
+      # an interpolated regex or a substring — so the dots in `1.0.0` are literal, a
+      # decoy like `## 1x2y3` can't match `v1.0.0`, and `## Next [1.0.0] notes` can't
+      # be mistaken for the real `## [1.0.0] - 2026-07-18`. Both the bare (`## 1.0.0`)
+      # and Keep-a-Changelog bracketed (`## [1.0.0] - <date>`) heading styles are
+      # accepted; field 2 is the version either way. A missing section fails.
       - name: Extract release notes from CHANGELOG.md
         if: steps.channel.outputs.prerelease == 'false'
         env:
@@ -75,13 +184,13 @@ jobs:
           echo "Release notes extracted ($(wc -l < release-notes.md) lines)."
           cat release-notes.md
 
-      # No npm publish step: publishing is deferred until the package-name decision is
-      # made (the placeholders `tailwindcss-fluid` / `@tailwindcss-fluid/tailwind-merge`
-      # are not yet claimed). Add the publish job here once the names are settled.
+      # Artifact-first: the GitHub release exists (with the tarball attached) before
+      # npm is asked to publish, so a registry outage never blocks the download.
       - name: Create GitHub release (stable)
         if: steps.channel.outputs.prerelease == 'false'
         uses: softprops/action-gh-release@v2
         with:
+          files: ${{ steps.pack.outputs.path }}
           body_path: release-notes.md
           prerelease: false
 
@@ -89,5 +198,30 @@ jobs:
         if: steps.channel.outputs.prerelease == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          files: ${{ steps.pack.outputs.path }}
           generate_release_notes: true
           prerelease: true
+
+      # Guarded + idempotent: skips cleanly before NPM_TOKEN exists, and skips a
+      # version already on the registry so a re-run after a partial failure republishes
+      # nothing. Scoped package → `--access public`; provenance is generated in CI.
+      - name: Publish to npm
+        if: env.NPM_TOKEN != ''
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          TAG_VERSION: ${{ steps.channel.outputs.version }}
+          DIST_TAG: ${{ steps.channel.outputs.disttag }}
+          TARBALL: ${{ steps.pack.outputs.path }}
+        run: |
+          set -euo pipefail
+          live="$(npm view "@jalendport/tailwindcss-fluid@$TAG_VERSION" version 2>/dev/null || true)"
+          if [ "$live" = "$TAG_VERSION" ]; then
+            echo "npm already has @jalendport/tailwindcss-fluid@$TAG_VERSION — skipping."
+            exit 0
+          fi
+          npm publish "$TARBALL" --access public --provenance --tag "$DIST_TAG"
+          echo "Published @jalendport/tailwindcss-fluid@$TAG_VERSION to dist-tag '$DIST_TAG'."
+
+      - name: Report skipped npm publish
+        if: env.NPM_TOKEN == ''
+        run: echo "::warning::NPM_TOKEN is not set — skipped the npm publish. Add the secret to publish to the registry."
