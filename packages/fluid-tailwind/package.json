@@ -27,9 +27,15 @@
 	"sideEffects": false,
 	"main": "./dist/index.mjs",
 	"module": "./dist/index.mjs",
+	"types": "./dist/index.d.mts",
 	"exports": {
 		".": {
+			"types": "./dist/index.d.mts",
 			"import": "./dist/index.mjs"
+		},
+		"./tailwind-merge": {
+			"types": "./dist/tailwind-merge/index.d.mts",
+			"import": "./dist/tailwind-merge/index.mjs"
 		}
 	},
 	"files": [
@@ -42,10 +48,17 @@
 		"test": "vitest run"
 	},
 	"peerDependencies": {
+		"tailwind-merge": "^3",
 		"tailwindcss": "^4.3"
+	},
+	"peerDependenciesMeta": {
+		"tailwind-merge": {
+			"optional": true
+		}
 	},
 	"devDependencies": {
 		"@types/node": "^22.13.1",
+		"tailwind-merge": "^3.6.0",
 		"tailwindcss": "^4.3.3",
 		"tsdown": "^0.22.9",
 		"typescript": "^5.7.3",

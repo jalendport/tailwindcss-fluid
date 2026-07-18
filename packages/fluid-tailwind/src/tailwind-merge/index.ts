@@ -1,6 +1,13 @@
 // `withFluid` — a tailwind-merge v3 config extension that teaches `twMerge` about
 // this plugin's `fl-` fluid utilities and `fl-…`/`@fl-…` range variants.
 //
+// This is the `@jalendport/tailwindcss-fluid/tailwind-merge` subpath entry. It ships
+// in the same package as the plugin so it can import the plugin's real length policy
+// (`Length`/`remNumber`), SC 1.4.4 check (`assertSC144`), and root surface (`ROOTS`)
+// directly — no copied-and-synced twins. It only pulls in pure helpers (no
+// tailwindcss import), and the plugin's main entry never imports THIS file, so
+// `tailwind-merge` stays an OPTIONAL peer: installing the plugin never requires it.
+//
 // The insight: a fluid utility sets the SAME CSS property as its core counterpart
 // (`fl-p-4/8` and `p-4` both set padding; `fl-text-sm/xl` and `text-lg` both set
 // font-size), so they must share a conflict group and resolve last-wins. Rather
@@ -24,12 +31,13 @@
 //     SC 1.4.4 check. Grouping either would DELETE a real fallback (`p-2`,
 //     `text-lg`) that renders. The gate encodes the PLUGIN's knowledge, not just
 //     core's — a pair is grouped only when every check below passes (see
-//     `canGroup`): the root is on the plugin's static allowlist (`roots.ts`); the
-//     endpoints aren't identical (`no-change`); any arbitrary endpoint folds to a
-//     literal rem/px length; `fl-text` isn't an unsupported arbitrary form and a
-//     named `fl-text` pair passes SC 1.4.4 for the configured range/scale; and BOTH
-//     channels are real classes in one core group (a probe merge). Anything
-//     unproven is left ungrouped → it merges with nothing and deletes nothing.
+//     `canGroup`): the root is on the plugin's static allowlist (`FLUID_ROOTS`,
+//     derived from the real `ROOTS`); the endpoints aren't identical (`no-change`);
+//     any arbitrary endpoint folds to a literal rem/px length; `fl-text` isn't an
+//     unsupported arbitrary form and a named `fl-text` pair passes SC 1.4.4 for the
+//     configured range/scale; and BOTH channels are real classes in one core group
+//     (a probe merge). Anything unproven is left ungrouped → it merges with nothing
+//     and deletes nothing.
 //
 //  2. RANGE VARIANTS ARE ORDER-SENSITIVE. `hover:fl-md/lg:…` scopes the range to
 //     hover; `fl-md/lg:hover:…` installs it unconditionally — they are NOT
@@ -41,8 +49,55 @@
 //     class text is the untouched original.
 
 import { createTailwindMerge, mergeConfigs, type Config } from 'tailwind-merge';
-import { FLUID_ROOTS } from './roots';
-import { DEFAULT_TEXT_SCALE, passesSC144 } from './sc144';
+import { Length } from '../css';
+import { FluidError } from '../errors';
+import { ROOTS } from '../roots';
+import { assertSC144 } from '../sc144';
+import { remNumber } from '../theme';
+
+/**
+ * Core-equivalent roots the plugin supports, derived from the real `ROOTS` at module
+ * init (each plugin root with the leading `fl-` stripped — the base `analyzeFluid`
+ * derives). Importing the source of truth means the allowlist can never drift from
+ * the plugin, so no generated copy and no sync test are needed.
+ */
+const FLUID_ROOTS: ReadonlySet<string> = new Set(ROOTS.map((r) => r.root.replace(/^fl-/, '')));
+
+// Tailwind v4's default `--text-*` scale (rem). The plugin reads this from the live
+// theme at build time, so there's no static export to import; this is a standalone
+// copy the SC 1.4.4 gate evaluates against. A custom `--text-*` theme shifts reality
+// — see `withFluid`'s `textScale` option + the READMEs for how to realign.
+const DEFAULT_TEXT_SCALE: Record<string, number> = {
+	xs: 0.75,
+	sm: 0.875,
+	base: 1,
+	lg: 1.125,
+	xl: 1.25,
+	'2xl': 1.5,
+	'3xl': 1.875,
+	'4xl': 2.25,
+	'5xl': 3,
+	'6xl': 3.75,
+	'7xl': 4.5,
+	'8xl': 6,
+	'9xl': 8,
+};
+
+/**
+ * Whether the font-size pair `start`→`end` (rem numbers), fluid across
+ * `startBP`→`endBP` (rem numbers), satisfies WCAG SC 1.4.4. Delegates to the plugin's
+ * real `assertSC144` (which throws a `FluidError` on failure) and turns it into a
+ * boolean, so the merge gate can never diverge from what the plugin actually rejects.
+ */
+function passesSC144(start: number, end: number, startBP: number, endBP: number): boolean {
+	try {
+		assertSC144(start, end, startBP, endBP);
+		return true;
+	} catch (e) {
+		if (e instanceof FluidError) return false;
+		throw e;
+	}
+}
 
 /** Options mirroring the plugin's, so the merge check matches the plugin's reality. */
 export interface WithFluidOptions {
@@ -74,33 +129,29 @@ const FLUID_BASE = /^(-?)fl-(.+)$/;
 /** Matches a `fl-…`/`@fl-…` range VARIANT (a modifier), incl. bare `fl`/`@fl`. */
 const FLUID_MODIFIER = /^@?fl(?:[-/].*)?$/;
 
-/** A rem/px length (or unit-free zero), case-insensitive — the plugin's foldable form. */
-const REM_PX_LENGTH = /^\s*([+-]?[0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)(rem|px)?\s*$/i;
+/**
+ * Fold a length string to a unitless rem number (16px/rem); null if it isn't a
+ * rem-resolvable literal. Uses the plugin's own `Length.parse` (case-insensitive,
+ * unit-required for non-zero) + `remNumber` (rem native, px folded at 16, unit-free
+ * zero) — the exact policy the clamp emitter enforces, so every non-rem/px unit
+ * (`1em`, `url(x)`, junk) reads as unfoldable, matching what the plugin emits nothing
+ * for.
+ */
+function foldLength(raw: string): number | null {
+	const len = Length.parse(raw);
+	if (!len) return null;
+	try {
+		return remNumber(len);
+	} catch {
+		return null;
+	}
+}
 
-/** Parse a rem/px length option to a unitless rem number (16px/rem); null if unusable. */
+/** Parse a rem/px length option to a unitless rem number; the fallback if unusable. */
 function remOption(raw: string | number | undefined, fallback: number): number {
 	if (raw == null) return fallback;
 	if (typeof raw === 'number') return isNaN(raw) ? fallback : raw;
-	const m = REM_PX_LENGTH.exec(raw);
-	if (!m) return fallback;
-	const n = parseFloat(m[1]!);
-	if (isNaN(n)) return fallback;
-	return (m[2]?.toLowerCase() ?? 'rem') === 'px' ? n / 16 : n;
-}
-
-/**
- * Fold an arbitrary value (`[…]` stripped) to a unitless rem number (16px/rem); null
- * if it isn't a literal rem/px length. The plugin's `toRem` only keeps rem, px, and a
- * unit-free zero; every other unit raises `unsupported-unit` and emits no property.
- */
-function foldLength(inner: string): number | null {
-	const m = REM_PX_LENGTH.exec(inner);
-	if (!m) return null;
-	const n = parseFloat(m[1]!);
-	if (isNaN(n)) return null;
-	if (n === 0) return 0; // unit-free zero folds; `[0rem]` ≡ `[0px]` ≡ `[0]`
-	if (m[2] == null) return null; // a non-zero literal needs a rem/px unit
-	return m[2].toLowerCase() === 'px' ? n / 16 : n;
+	return foldLength(raw) ?? fallback;
 }
 
 /** Whether an arbitrary value (`[…]` stripped) folds to a literal rem/px length. */
@@ -181,7 +232,7 @@ function analyzeFluid(baseClassName: string): FluidAnalysis | null {
  *
  * ```ts
  * import { extendTailwindMerge } from 'tailwind-merge';
- * import { withFluid } from '@tailwindcss-fluid/tailwind-merge';
+ * import { withFluid } from '@jalendport/tailwindcss-fluid/tailwind-merge';
  *
  * const twMerge = extendTailwindMerge(withFluid);
  * // or, matching a plugin configured with `checkSC144: false`:

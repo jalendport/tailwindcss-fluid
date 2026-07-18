@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { extendTailwindMerge, validators } from 'tailwind-merge';
-import { withFluid } from '../src/index';
+import { withFluid } from '../src/tailwind-merge/index';
 
 const twMerge = extendTailwindMerge(withFluid);
 const twMergeNoSC144 = extendTailwindMerge((config) => withFluid(config, { checkSC144: false }));
