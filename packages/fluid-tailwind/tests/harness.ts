@@ -47,7 +47,7 @@ export async function run(candidates: string[], options: CompileOptions = {}): P
 		base: import.meta.dirname,
 		loadStylesheet,
 		loadModule: async (id, _base, _resourceHint) => {
-			if (id === 'fluid' || id === 'tailwindcss-fluid') {
+			if (id === 'fluid' || id === '@jalendport/tailwindcss-fluid') {
 				const mod = (await import('../src/index.ts')) as { default: unknown };
 				return { path: id, base: import.meta.dirname, module: mod.default };
 			}

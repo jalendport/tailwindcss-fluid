@@ -1,5 +1,5 @@
 @import 'tailwindcss';
-@plugin "tailwindcss-fluid" {
+@plugin "@jalendport/tailwindcss-fluid" {
 	min-screen: 40rem;
 	max-screen: 96rem;
 }

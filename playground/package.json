@@ -11,11 +11,11 @@
 		"test:ls": "node ./scripts/verify-intellisense.mjs"
 	},
 	"devDependencies": {
+		"@jalendport/tailwindcss-fluid": "workspace:*",
 		"@tailwindcss/language-server": "^0.14.29",
 		"@tailwindcss/vite": "^4.3.3",
 		"playwright": "^1.50.0",
 		"tailwindcss": "^4.3.3",
-		"tailwindcss-fluid": "workspace:*",
 		"vite": "^6.0.11"
 	}
 }

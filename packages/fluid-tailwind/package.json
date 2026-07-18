@@ -1,6 +1,6 @@
 {
-	"name": "tailwindcss-fluid",
-	"version": "0.0.0",
+	"name": "@jalendport/tailwindcss-fluid",
+	"version": "1.0.0",
 	"description": "Fluid clamp() utilities and range variants for Tailwind CSS v4.",
 	"keywords": [
 		"tailwindcss",

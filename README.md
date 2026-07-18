@@ -1,4 +1,4 @@
-<h1 align="center">tailwindcss-fluid</h1>
+<h1 align="center">@jalendport/tailwindcss-fluid</h1>
 <p align="center"><em>Fluid clamp() utilities and range variants for Tailwind CSS v4.</em></p>
 
 Fluid utilities interpolate a CSS value between two endpoints as the viewport (or a container) grows, emitting a `clamp()` so the value scales smoothly instead of jumping at breakpoints. Write the start and end on either side of a slash — `fl-text-base/4xl` ramps font-size from the `base` size up to the `4xl` size across the default range, and clamps at both ends.
@@ -11,22 +11,26 @@ Fluid utilities interpolate a CSS value between two endpoints as the viewport (o
 
 ## Status
 
-**Pre-release — not yet on npm.** The package is feature-complete and tested but the npm names are not final; install from the repository for now. The class grammar below is stable.
+**Not yet on npm.** The package is feature-complete and tested; the first published release will be `1.0.0-beta.1` under the name `@jalendport/tailwindcss-fluid`. Until it's live, install from the repository. The class grammar below is stable.
 
 ## Installation
 
-The plugin is loaded through Tailwind v4's `@plugin` directive in your CSS. It requires `tailwindcss@^4.3` (a peer dependency).
+Install the package (once published) and load the plugin through Tailwind v4's `@plugin` directive in your CSS. It requires `tailwindcss@^4.3` (a peer dependency).
+
+```sh
+pnpm add -D @jalendport/tailwindcss-fluid
+```
 
 ```css
 @import 'tailwindcss';
-@plugin "tailwindcss-fluid";
+@plugin "@jalendport/tailwindcss-fluid";
 ```
 
 Options are passed in a block. All are optional:
 
 ```css
 @import 'tailwindcss';
-@plugin "tailwindcss-fluid" {
+@plugin "@jalendport/tailwindcss-fluid" {
 	min-screen: 20rem; /* start of the default viewport range (default: smallest --breakpoint-*, 40rem) */
 	max-screen: 80rem; /* end of the default viewport range   (default: largest  --breakpoint-*, 96rem) */
 	checkSC144: false; /* opt out of the WCAG 1.4.4 zoom-safety check (default: on) */
@@ -213,11 +217,11 @@ If a token name collides with a real scale key (`--fl-4` vs spacing `4`, `--fl-s
 
 ## tailwind-merge companion
 
-`@tailwindcss-fluid/tailwind-merge` teaches [tailwind-merge](https://github.com/dcastil/tailwind-merge) v3 (peer `tailwind-merge@^3`) that fluid utilities set the same CSS property as their non-fluid counterparts, so conflicting classes resolve last-one-wins.
+The `@jalendport/tailwindcss-fluid/tailwind-merge` subpath export teaches [tailwind-merge](https://github.com/dcastil/tailwind-merge) v3 (optional peer `tailwind-merge@^3`) that fluid utilities set the same CSS property as their non-fluid counterparts, so conflicting classes resolve last-one-wins. It ships in the same package as the plugin, but the plugin never imports it — so `tailwind-merge` stays an optional peer you only need when you use `withFluid`.
 
 ```ts
 import { extendTailwindMerge } from 'tailwind-merge';
-import { withFluid } from '@tailwindcss-fluid/tailwind-merge';
+import { withFluid } from '@jalendport/tailwindcss-fluid/tailwind-merge';
 
 const twMerge = extendTailwindMerge(withFluid);
 ```

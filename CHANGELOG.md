@@ -17,4 +17,4 @@ All notable changes to this project are documented here. The format is based on 
 - `min-screen` / `max-screen` `@plugin` options to override the default viewport range.
 - Visible error surfacing via a `--tw-fl-error` custom property (shown in devtools and on IntelliSense hover) for invalid class forms, keeping the language server crash-free.
 - IntelliSense support: autocompletion for `fl-*` utilities and `fl-`/`@fl-` variant prefixes, plus compiled-CSS hover previews.
-- `@tailwindcss-fluid/tailwind-merge` companion — a `withFluid` extension for tailwind-merge v3 that merges fluid utilities with their non-fluid counterparts.
+- `@jalendport/tailwindcss-fluid/tailwind-merge` subpath export — a `withFluid` extension for tailwind-merge v3 (optional peer) that merges fluid utilities with their non-fluid counterparts.
