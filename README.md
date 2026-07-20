@@ -181,6 +181,10 @@ The interpolation term is rem-denominated, so endpoints (and breakpoints) must b
 - **`fl-stroke`** — the `--stroke-width-*` scale is unitless, so `fl-stroke-1/2` is dropped. Use arbitrary rem/px (`fl-stroke-[1px]/[2px]`).
 - **`fl-leading`** — better than you might expect: the stock numeric line-height scale is rem-backed, so `fl-leading-4/8` interpolates. Only the ratio-named keys (`tight`, `snug`, `loose`, …) are unitless and are dropped; arbitrary rem values work.
 
+### Custom `--spacing` disables named spacing utilities
+
+If you override the base spacing unit (`@theme { --spacing: 0.3rem }`), Tailwind's compat layer stops exposing a resolvable spacing scale to plugins, and every **named** spacing-backed fluid utility — `fl-p-4/8`, `fl-m-2/6`, `fl-w-16/32`, `fl-gap-2/4`, and the rest of the spacing and sizing families — silently stops registering (the classes simply don't match; no error can surface because they never reach the plugin). The stock theme is unaffected. The workaround is **arbitrary rem/px endpoints**, which don't depend on the scale: `fl-p-[1.2rem]/[2.4rem]` works under any `--spacing`. A proper fix (computing `n × --spacing` inside the plugin) is planned for a later release.
+
 ### `100vw` includes the scrollbar
 
 `--fl-vw` initializes to `100vw`, and `100vw` is the width of the viewport **including** the vertical scrollbar gutter — it's wider than the layout viewport whenever a scrollbar is present. So fluid values run slightly large near the top of their range, and fluid widths (`fl-w-*`, `fl-max-w-*`, `fl-basis-*`) can induce horizontal overflow, exactly as in v3 and any hand-written `100vw` fluid setup. If that bites, prefer fluid sizing on inner content over full-width elements, or reserve the gutter with `scrollbar-gutter: stable`. (Container ranges use `100cqw`, which is gutter-free.)
