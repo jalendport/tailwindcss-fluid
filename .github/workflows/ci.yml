@@ -46,6 +46,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # The plugin's built dist is what the playground consumes (workspace:*).
       - run: pnpm build
-      - run: npx playwright install --with-deps chromium
+      - run: pnpm --filter playground exec playwright install --with-deps chromium
       - run: pnpm --filter playground test:e2e
       - run: pnpm --filter playground test:ls
