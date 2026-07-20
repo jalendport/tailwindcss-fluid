@@ -43,14 +43,15 @@ A fluid class is a core-utility root prefixed with `fl-`, taking a `start/end` v
 
 ### Value forms
 
-| Form              | Example                          | Notes                                                                           |
-| ----------------- | -------------------------------- | ------------------------------------------------------------------------------- |
-| Theme keys        | `fl-text-base/4xl`, `fl-p-4/8`   | Both ends are theme keys of that utility's scale                                |
-| Negative          | `-fl-mt-3/5`                     | Dash first; only where the core utility has negatives                           |
-| Arbitrary lengths | `fl-p-[1rem]/[2rem]`             | Both must be rem-resolvable (rem or px)                                         |
-| Mixed px/rem      | `fl-p-[16px]/[2rem]`             | px folds to rem at 16px/rem → `1rem`→`2rem`                                     |
-| Decreasing        | `fl-p-8/4`                       | Start > end is fine; the clamp bounds swap, direction is kept                   |
-| Fluid token       | `fl-text-display`, `fl-p-gutter` | A `--fl-*` theme pair, no slash (see [Fluid theme tokens](#fluid-theme-tokens)) |
+| Form                      | Example                                                           | Notes                                                                            |
+| ------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Theme keys                | `fl-text-base/4xl`, `fl-p-4/8`                                    | Both ends are theme keys of that utility's scale                                 |
+| Negative                  | `-fl-mt-3/5`                                                      | Dash first; only where the core utility has negatives                            |
+| Arbitrary lengths         | `fl-p-[1rem]/[2rem]`                                              | Both must be rem-resolvable (rem or px)                                          |
+| Mixed px/rem              | `fl-p-[16px]/[2rem]`                                              | px folds to rem at 16px/rem → `1rem`→`2rem`                                      |
+| Arbitrary/mixed `fl-text` | `fl-text-[1rem]/[2rem]`, `fl-text-sm/[2rem]`, `fl-text-[1rem]/xl` | **Size-only** — a font-size clamp with no line-height/letter-spacing (see below) |
+| Decreasing                | `fl-p-8/4`                                                        | Start > end is fine; the clamp bounds swap, direction is kept                    |
+| Fluid token               | `fl-text-display`, `fl-p-gutter`                                  | A `--fl-*` theme pair, no slash (see [Fluid theme tokens](#fluid-theme-tokens))  |
 
 ### Utility roots
 
@@ -71,7 +72,17 @@ Every length-accepting core root is covered (92 roots). Each accepts all the val
 | Border width                | `fl-border` + `-x/-y/-s/-e/-t/-r/-b/-l`                                                                    |
 | Outline / ring / stroke     | `fl-outline`, `fl-outline-offset` (±), `fl-ring`, `fl-stroke`                                              |
 
-`fl-text` interpolates font-size and the endpoints' `--text-*--line-height` and letter-spacing sub-values together, like v3. An explicit line-height can't ride the slash (it's taken by the end value); use `fl-leading-x/y`.
+`fl-text` interpolates font-size and the endpoints' `--text-*--line-height` and letter-spacing sub-values together, like v3 — **but only when both endpoints are named text keys**. An explicit line-height can't ride the slash (it's taken by the end value); use `fl-leading-x/y`.
+
+Any arbitrary or mixed endpoint makes the pair **size-only** — a font-size clamp with no sub-values:
+
+```html
+<h1 class="fl-text-[1rem]/[2rem]">arbitrary both ends → font-size only</h1>
+<h1 class="fl-text-sm/[2rem]">named start, arbitrary end → size-only</h1>
+<h1 class="fl-text-[1rem]/xl">arbitrary start, named end → size-only</h1>
+```
+
+The rem/px unit policy and the WCAG 1.4.4 check apply exactly as for named pairs (the endpoints are statically known, so the zoom check is exact). Line-height/letter-spacing only interpolate for a named/named pair, since an arbitrary endpoint carries no `--text-*` tuple — use `fl-leading`/`fl-tracking` alongside if you need them fluid too.
 
 ### Viewport range variants
 
@@ -116,14 +127,16 @@ Each utility inlines its two endpoint lengths at build time (resolved through th
 	font-size: clamp(
 		0.875rem,
 		calc(
-			0.875rem + (0.375) * (var(--fl-vw) - var(--fl-bp-min) * 1rem) /
-				(var(--fl-bp-max) - var(--fl-bp-min))
+			0.875rem + (0.375) * (var(--fl-vw, 100vw) - var(--fl-bp-min, 40) * 1rem) /
+				(var(--fl-bp-max, 96) - var(--fl-bp-min, 40))
 		),
 		1.25rem
 	);
 	/* + a matching line-height clamp from the --text-* sub-values */
 }
 ```
+
+Each engine `var()` carries an inline fallback (`var(--fl-vw, 100vw)`, `var(--fl-bp-min, 40)`, …) matching its `@property` initial-value, so the **default range** still renders if `@property` is ever stripped (an over-aggressive minifier, a non-supporting target) instead of the whole `clamp()` collapsing to an invalid value.
 
 The three engine variables are registered once via `@property` with `inherits: false` and theme-derived initial values:
 
@@ -145,7 +158,7 @@ The three engine variables are registered once via `@property` with `inherits: f
 }
 ```
 
-`--fl-bp-min`/`--fl-bp-max` are unitless rem numbers; `--fl-vw` is the width source (`100vw`, swapped to `100cqw` by container variants). `inherits: false` is what makes the engine defaults apply everywhere and stops a variant's range from leaking into descendants.
+`--fl-bp-min`/`--fl-bp-max` are unitless rem numbers; `--fl-vw` is the width source (`100vw`, swapped to `100cqw` by container variants). `inherits: false` is what makes the engine defaults apply everywhere and stops a variant's range from leaking into descendants. The inline fallbacks above only cover the _default_ range degrading gracefully — `@property` remains **load-bearing** for the `inherits: false` containment, which no fallback can replace, so it isn't optional.
 
 ## Important semantics
 
@@ -168,11 +181,21 @@ The interpolation term is rem-denominated, so endpoints (and breakpoints) must b
 - **`fl-stroke`** — the `--stroke-width-*` scale is unitless, so `fl-stroke-1/2` is dropped. Use arbitrary rem/px (`fl-stroke-[1px]/[2px]`).
 - **`fl-leading`** — better than you might expect: the stock numeric line-height scale is rem-backed, so `fl-leading-4/8` interpolates. Only the ratio-named keys (`tight`, `snug`, `loose`, …) are unitless and are dropped; arbitrary rem values work.
 
+### `100vw` includes the scrollbar
+
+`--fl-vw` initializes to `100vw`, and `100vw` is the width of the viewport **including** the vertical scrollbar gutter — it's wider than the layout viewport whenever a scrollbar is present. So fluid values run slightly large near the top of their range, and fluid widths (`fl-w-*`, `fl-max-w-*`, `fl-basis-*`) can induce horizontal overflow, exactly as in v3 and any hand-written `100vw` fluid setup. If that bites, prefer fluid sizing on inner content over full-width elements, or reserve the gutter with `scrollbar-gutter: stable`. (Container ranges use `100cqw`, which is gutter-free.)
+
+### Ranges must be increasing
+
+A resolved range variant must satisfy `min < max` — the interpolation divides by `(max − min)`, so an **equal** breakpoint range is a divide-by-zero and a **decreasing** one interpolates backwards as the viewport grows. Both are rejected with a `bp-range-invalid` error surface, and the utility falls back to the engine default range. `fl-md/md:` (equal) and `fl-lg/md:` (inverted) fail; a decreasing _value_ range like `fl-p-8/4` is unaffected — that's the supported "shrink as it grows" feature, a different thing. Equal or inverted `min-screen`/`max-screen` options fail the build loudly (config is intentional).
+
 ### WCAG 1.4.4 zoom safety
 
 Fluid font sizes are checked at build time against WCAG Success Criterion 1.4.4 (Resize Text). A fluid curve too shallow to reach 200% enlargement under 5× browser zoom is **rejected**: the utility emits no fluid `font-size` (only a `--tw-fl-error`), while its line-height/letter-spacing sub-values still generate. For example `fl-text-sm/5xl` over the default `40rem`→`96rem` range fails.
 
 The check runs against the default range **at utility generation**, so only two things can change its outcome: widening the range with the `min-screen`/`max-screen` options, or disabling the check with `checkSC144: false`. A wider **variant** range (e.g. `fl-[0.5rem]/[120rem]:fl-text-sm/5xl`) **cannot** rescue it — variants never see the utility they wrap, so a variant range is invisible to generation-time validation and the pair still fails.
+
+The same blind spot applies to **container** ranges: a font-size pair you only ever use under `@fl-…` (e.g. `@fl-md/lg:fl-text-sm/5xl`) is still validated against the **viewport** default range (40→96), which is irrelevant to how it actually renders — utilities are generated context-free, so the check can't know a pair is container-only. This can _falsely reject_ a pair that would be perfectly safe over its real container range. The escapes are the same: `checkSC144: false`, or widen `min-screen`/`max-screen` so the pair passes at generation time.
 
 ### Error surfacing
 
@@ -185,6 +208,7 @@ Invalid class forms don't throw — they emit a visible `--tw-fl-error` custom p
 | `unsupported-unit`                                   | A differing endpoint isn't rem-resolvable (`fl-tracking-tight/wide`)                           |
 | `no-change`                                          | Start and end are equal (`fl-p-4/4`)                                                           |
 | `bp-not-found`                                       | A named variant breakpoint doesn't exist (`fl-md/nope:`)                                       |
+| `bp-range-invalid`                                   | A variant range is equal or decreasing (`fl-md/md:`, `fl-lg/md:`)                              |
 | `fails-sc-144`                                       | A font-size pair fails the WCAG 1.4.4 zoom check                                               |
 | `token-not-pair` / `token-with-end` / `token-as-end` | Misused `--fl-*` token (see below)                                                             |
 | `mismatched-font-weights`                            | A `fl-text` pair's endpoints have different font weights                                       |
@@ -253,9 +277,9 @@ const twMerge = extendTailwindMerge((config) =>
 );
 ```
 
-The gate evaluates named font sizes against the default `40rem`→`96rem` range and Tailwind's default `--text-*` scale. A custom `--text-*` scale or `--breakpoint-*` range shifts what the plugin actually emits; `minScreen`/`maxScreen`, `textScale` (rem lengths or unitless rem numbers, merged over the default scale), and `checkSC144: false` exist to realign the merge check with that reality.
+The gate evaluates font sizes against the default `40rem`→`96rem` range and Tailwind's default `--text-*` scale. Named endpoints resolve via that scale; arbitrary/mixed `fl-text` endpoints (`fl-text-[1rem]/[2rem]`, `fl-text-sm/[2rem]`) fold their bracketed length and are checked the same way — arbitrary `fl-text` pairs are size-only but real, so they now group when they pass. A custom `--text-*` scale or `--breakpoint-*` range shifts what the plugin actually emits; `minScreen`/`maxScreen`, `textScale` (rem lengths or unitless rem numbers, merged over the default scale), and `checkSC144: false` exist to realign the merge check with that reality.
 
-Only a fluid class whose root the plugin actually supports is ever grouped — the companion bundles the plugin's root surface (a static allowlist kept in sync by a test), so an unknown root (`fl-opacity-50/75`, a custom class group) is never merged. A `no-change` pair (`fl-p-4/4`), a non-rem/px arbitrary endpoint (`fl-p-[1em]/[2em]`, `fl-p-[url(x)]/4`), and any arbitrary `fl-text` pair are likewise left alone, since the plugin emits no property for them.
+Only a fluid class whose root the plugin actually supports is ever grouped — the companion bundles the plugin's root surface (a static allowlist kept in sync by a test), so an unknown root (`fl-opacity-50/75`, a custom class group) is never merged. A `no-change` pair (`fl-p-4/4`), a non-rem/px arbitrary endpoint (`fl-p-[1em]/[2em]`, `fl-p-[url(x)]/4`), and a `fl-text` pair the plugin would reject (fails SC 1.4.4, or a non-foldable endpoint) are likewise left alone, since the plugin emits no property for them.
 
 ## Migrating from fluid-tailwind (v3)
 
@@ -289,6 +313,8 @@ With the [Tailwind CSS IntelliSense](https://marketplace.visualstudio.com/items?
 - **Utilities** — `fl-*` utilities autocomplete (`fl-text-…`, `fl-p-…`, and all the roots), and defined `--fl-*` tokens appear as values (`fl-text-display`).
 - **Hover** over a fluid utility shows the compiled `clamp()` CSS, with `/* px */` annotations on rem values.
 - **Variants** — the language server offers the arbitrary variant stubs `fl-[]:` and `@fl-[]:` after `fl-`, and recognizes `fl-`/`@fl-` prefixes so utilities complete under them (`@fl-md:fl-…`). It does not enumerate every named breakpoint pair (`fl-md/lg:`) as a discrete completion — type the breakpoint name against the recognized `fl-`/`@fl-` root.
+
+Because every scale key is enumerable, a bare completion like `fl-p-4` (no `/end`) is offered — but a fluid utility needs a range, so selecting one without an end hovers as a `missing-end` **error surface**, by design. That's the slash-pair grammar (v3 had it too), not breakage: add the `/end` (`fl-p-4/8`) and the hover shows the real `clamp()`.
 
 ## Credits
 

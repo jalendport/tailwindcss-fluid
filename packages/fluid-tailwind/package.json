@@ -45,7 +45,8 @@
 	],
 	"scripts": {
 		"build": "tsdown",
-		"test": "vitest run"
+		"test": "vitest run",
+		"prepack": "node ../../scripts/copy-readme.mjs"
 	},
 	"peerDependencies": {
 		"tailwind-merge": "^3",
