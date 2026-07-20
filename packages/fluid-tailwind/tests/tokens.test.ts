@@ -10,7 +10,7 @@ import { run } from './harness';
 
 const nows = (s: string) => s.replace(/\s+/g, '');
 const clampStr = (lo: string, from: string, slope: string, hi: string) =>
-	`clamp(${lo}rem,calc(${from}rem+(${slope})*(var(--fl-vw)-var(--fl-bp-min)*1rem)/(var(--fl-bp-max)-var(--fl-bp-min))),${hi}rem)`;
+	`clamp(${lo}rem,calc(${from}rem+(${slope})*(var(--fl-vw,100vw)-var(--fl-bp-min,40)*1rem)/(var(--fl-bp-max,96)-var(--fl-bp-min,40))),${hi}rem)`;
 const rule = (css: string, sel: string) => {
 	const i = css.indexOf(sel);
 	if (i === -1) return '';

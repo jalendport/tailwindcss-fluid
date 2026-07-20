@@ -26,7 +26,7 @@
 // drop). Documented in m3-results.
 
 import { Length } from './css';
-import { ERROR_PROP, FluidError } from './errors';
+import { ERROR_PROP, errorSurface, FluidError } from './errors';
 import { remNumber, type FluidTheme } from './theme';
 import type { PluginAPI } from './utilities';
 
@@ -87,13 +87,19 @@ function inject(channel: Channel, value: string, modifier: string | null | undef
 	try {
 		const min = resolveStart(value, channel);
 		const max = resolveEnd(modifier, channel);
+		// The interpolation term divides by `(max - min)`, so the resolved range must
+		// be strictly increasing (M10 §1). An equal range is a runtime divide-by-zero;
+		// a decreasing one interpolates backwards. Reject both here, surface the error,
+		// and emit NO range vars — the utility falls back to the engine defaults.
+		if (!(min < max)) throw FluidError.fromCode('bp-range-invalid', min, max);
 		return `&{--fl-bp-min:${min};--fl-bp-max:${max};${channel.extra}@slot}`;
 	} catch (e) {
 		// Surface the error into output CSS (visible on the rule + on IntelliSense
 		// hover) and keep the slot so the utility still renders at the engine
-		// defaults — never crash the design-system build.
+		// defaults — never crash the design-system build. The message is escaped for
+		// the CSS string context (M10 §3).
 		if (e instanceof FluidError) {
-			return `&{${ERROR_PROP}:"${e.code}: ${e.message}";${channel.extra}@slot}`;
+			return `&{${ERROR_PROP}:${errorSurface(e)};${channel.extra}@slot}`;
 		}
 		throw e;
 	}

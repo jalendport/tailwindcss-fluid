@@ -35,12 +35,34 @@ function toRem(len: Length): Length {
 }
 
 /**
+ * The resolved default engine range (option-resolved `min-screen`/`max-screen`, else
+ * the theme's smallest/largest breakpoint) — inlined as `var()` fallbacks so the
+ * default range degrades gracefully if `@property` is ever stripped (M10 §8). The
+ * numbers mirror the `@property` initial-values registered in `index.ts`.
+ */
+export interface DefaultRange {
+	min: number;
+	max: number;
+}
+
+/**
  * Emit the fluid clamp formula interpolating `rawStart` → `rawEnd` over the engine
  * variables. Throws a `FluidError` for any invalid pair (the caller surfaces it as
  * a `--tw-fl-error` declaration). The `--fl-vw` variable is `100vw` by default and
  * swapped to `100cqw` by the `@fl` container variants (M3), so no unit branch here.
+ *
+ * Each engine `var()` carries an inline fallback matching its `@property`
+ * initial-value (`--fl-vw` → `100vw`, `--fl-bp-min`/`--fl-bp-max` → the resolved
+ * default range). If `@property` is ever stripped (an over-aggressive minifier, a
+ * non-supporting target), the default range still renders instead of the whole
+ * `clamp()` collapsing to an invalid value. `@property` stays load-bearing for the
+ * `inherits: false` containment a fallback can't replace — see the README.
  */
-export function generate(rawStart: Length | RawValue, rawEnd: Length | RawValue): string {
+export function generate(
+	rawStart: Length | RawValue,
+	rawEnd: Length | RawValue,
+	range: DefaultRange,
+): string {
 	if (rawStart == null || rawStart === '') error('missing-start');
 	if (rawEnd == null || rawEnd === '') error('missing-end');
 
@@ -69,10 +91,16 @@ export function generate(rawStart: Length | RawValue, rawEnd: Length | RawValue)
 	const from = toPrecision(start.number, p);
 	const slope = toPrecision(end.number - start.number, p);
 
+	// Inline fallbacks (`, <default>`) on every engine var so the default range still
+	// resolves if `@property` is stripped (M10 §8). `--fl-bp-min` appears twice; both
+	// carry the fallback.
+	const vw = `var(--fl-vw, 100vw)`;
+	const bpMin = `var(--fl-bp-min, ${range.min})`;
+	const bpMax = `var(--fl-bp-max, ${range.max})`;
 	const interpolation =
 		`calc(${from}${unit} + (${slope}) * ` +
-		`(var(--fl-vw) - var(--fl-bp-min) * 1rem) / ` +
-		`(var(--fl-bp-max) - var(--fl-bp-min)))`;
+		`(${vw} - ${bpMin} * 1rem) / ` +
+		`(${bpMax} - ${bpMin}))`;
 
 	return `clamp(${lo}${unit}, ${interpolation}, ${hi}${unit})`;
 }

@@ -55,6 +55,14 @@ export const codes = {
 	// `failingBp` is the viewport width (rem) where the range stops enlarging enough.
 	'fails-sc-144': (failingBp: Length) =>
 		`Font-size range fails WCAG SC 1.4.4 (Resize Text): too shallow to reach 200% at 5× zoom near ${failingBp.cssText} — widen the range or set \`checkSC144: false\``,
+	// A resolved range variant whose start ≥ end (`fl-md/md:`, `fl-lg/md:`): the
+	// interpolation term divides by `(max - min)`, so an equal range is a runtime
+	// divide-by-zero and a decreasing one interpolates backwards. Surfaced beside
+	// `@slot` (no range vars emitted, so the utility falls back to the engine
+	// defaults). Decreasing *value* endpoints (`fl-p-8/4`) are a different, supported
+	// feature — this is about the breakpoint range only.
+	'bp-range-invalid': (min: number, max: number) =>
+		`Breakpoint range start (${min}rem) must be below the end (${max}rem) — an equal or decreasing breakpoint range can't interpolate`,
 } satisfies Record<string, (...args: never[]) => string>;
 
 export type ErrorCode = keyof typeof codes;
@@ -80,16 +88,45 @@ export function error<C extends ErrorCode>(code: C, ...args: Parameters<(typeof 
 	throw FluidError.fromCode(code, ...args);
 }
 
+/**
+ * A `@plugin { … }` configuration error (bad `min-screen`/`max-screen`/`checkSC144`,
+ * or an equal/inverted option range). Unlike a `FluidError`, this is NOT a per-class
+ * error surfaced as `--tw-fl-error` — the options are intentional global config, so a
+ * typo must fail the build loudly rather than silently reverting to defaults. Thrown
+ * from the plugin factory, so it propagates out of plugin init. `errorDecl` re-throws
+ * it (it isn't a `FluidError`), so it can never be swallowed into an output surface.
+ */
+export class FluidConfigError extends Error {
+	override name = 'FluidConfigError';
+}
+
+/** Throw a `FluidConfigError` with a clear, actionable message. Never returns. */
+export function configError(message: string): never {
+	throw new FluidConfigError(message);
+}
+
 /** The CSS custom property carrying a fluid error into emitted output. */
 export const ERROR_PROP = '--tw-fl-error';
 
 /**
+ * Escape a fluid error into a well-formed CSS string value for the `--tw-fl-error`
+ * declaration. The message embeds raw user text (candidate values, token strings), so
+ * a stray `"`, `\`, or newline would otherwise terminate the CSS string early and emit
+ * malformed CSS. `JSON.stringify` double-quotes it and escapes exactly those (`"`→`\"`,
+ * `\`→`\\`, newline→`\n`), so the value is always a single valid CSS string.
+ */
+export function errorSurface(e: FluidError): string {
+	return JSON.stringify(`${e.code}: ${e.message}`);
+}
+
+/**
  * Turn a caught error into the `--tw-fl-error` declaration surfaced in output CSS.
- * Re-throws anything that isn't a `FluidError` (a real bug, not an invalid class).
+ * Re-throws anything that isn't a `FluidError` (a real bug or a config error, not an
+ * invalid class).
  */
 export function errorDecl(e: unknown): Record<string, string> {
 	if (e instanceof FluidError) {
-		return { [ERROR_PROP]: `"${e.code}: ${e.message}"` };
+		return { [ERROR_PROP]: errorSurface(e) };
 	}
 	throw e;
 }

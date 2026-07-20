@@ -13,7 +13,7 @@ import type { ScaleName } from '../src/theme';
 
 const nows = (s: string) => s.replace(/\s+/g, '');
 const clampStr = (lo: string, from: string, slope: string, hi: string, unit = 'rem') =>
-	`clamp(${lo}${unit},calc(${from}${unit}+(${slope})*(var(--fl-vw)-var(--fl-bp-min)*1rem)/(var(--fl-bp-max)-var(--fl-bp-min))),${hi}${unit})`;
+	`clamp(${lo}${unit},calc(${from}${unit}+(${slope})*(var(--fl-vw,100vw)-var(--fl-bp-min,40)*1rem)/(var(--fl-bp-max,96)-var(--fl-bp-min,40))),${hi}${unit})`;
 
 // ---------------------------------------------------------------------------
 // One thorough root per scale family (font-size lives in engine.test.ts).
@@ -217,6 +217,32 @@ describe('registration smoke — every root compiles', () => {
 	it('registers a healthy root count', () => {
 		// Guards against an accidental truncation of the list.
 		expect(ROOTS.length).toBeGreaterThanOrEqual(70);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// M10 §7 — custom `--spacing` override. FINDING (reported in .briefs/m10-results.md,
+// not papered over): when a project overrides `@theme { --spacing }`, the compat
+// `theme('spacing')` no longer materializes the numeric scale — it returns the raw
+// base string (`"0.3rem"`), which `Object.entries` iterates as CHARACTERS (`4 → "e"`).
+// The plugin's length filter then keeps no keys, so NAMED fluid spacing utilities
+// (`fl-p-4/8`, `fl-w-16/32`, …) silently don't register. Arbitrary values are the
+// unaffected escape hatch. These tests pin the current behavior so a future compat
+// fix (or a plugin-side n × --spacing computation) will flag them to update.
+// ---------------------------------------------------------------------------
+describe('custom --spacing override (compat-layer limitation, M10 §7)', () => {
+	it('named fluid spacing keys silently do NOT resolve under a custom --spacing', async () => {
+		const css = await run(['fl-p-4/8'], { css: '@theme { --spacing: 0.3rem; }' });
+		// The `4` key is absent from the (empty) scale map, so no padding rule and no
+		// error surface is emitted — the candidate is dropped by the scanner.
+		expect(css).not.toMatch(/\.fl-p-4\\\/8[^{]*\{[^}]*padding/);
+		expect(css).not.toContain('--tw-fl-error');
+	});
+
+	it('arbitrary values are the escape hatch — fl-p-[1.2rem]/[2.4rem] works regardless', async () => {
+		const css = await run(['fl-p-[1.2rem]/[2.4rem]'], { css: '@theme { --spacing: 0.3rem; }' });
+		expect(nows(css)).toContain(nows(`padding:${clampStr('1.2', '1.2', '1.2', '2.4')}`));
+		expect(css).not.toContain('--tw-fl-error');
 	});
 });
 

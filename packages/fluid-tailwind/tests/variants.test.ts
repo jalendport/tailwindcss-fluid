@@ -99,6 +99,51 @@ describe('variant unit policy', () => {
 });
 
 // ---------------------------------------------------------------------------
+// M10 §1 — range validation. A resolved variant range must be strictly increasing
+// (min < max); the interpolation divides by (max - min). An equal range is a
+// divide-by-zero and a decreasing one interpolates backwards, so both are rejected
+// with a visible `bp-range-invalid` and NO range vars (the utility falls back to the
+// engine defaults). Decreasing *value* endpoints (fl-p-8/4) remain supported.
+// ---------------------------------------------------------------------------
+describe('variant range validation (bp-range-invalid)', () => {
+	it('fl-md/md: (equal) surfaces bp-range-invalid and emits no range vars', async () => {
+		const css = await run(['fl-md/md:fl-p-4/8']);
+		expect(css).toContain('bp-range-invalid');
+		expect(nows(css)).not.toContain('--fl-bp-min:48;--fl-bp-max:48');
+	});
+
+	it('fl-lg/md: (inverted 64 > 48) surfaces bp-range-invalid', async () => {
+		const css = await run(['fl-lg/md:fl-p-4/8']);
+		expect(css).toContain('bp-range-invalid');
+		expect(hasRange(css, 64, 48)).toBe(false);
+	});
+
+	it('fl-[40rem]/[40rem]: (equal arbitrary) surfaces bp-range-invalid', async () => {
+		const css = await run(['fl-[40rem]/[40rem]:fl-p-4/8']);
+		expect(css).toContain('bp-range-invalid');
+		expect(nows(css)).not.toContain('--fl-bp-min:40;--fl-bp-max:40');
+	});
+
+	it('@fl-md/md: (equal container) surfaces bp-range-invalid, keeps --fl-vw', async () => {
+		const css = await run(['@fl-md/md:fl-p-4/8']);
+		expect(css).toContain('bp-range-invalid');
+		expect(nows(css)).toContain('--fl-vw:100cqw');
+		expect(nows(css)).not.toContain('--fl-bp-min:28;--fl-bp-max:28');
+	});
+
+	it('@fl-lg/sm: (inverted container 32 > 24) surfaces bp-range-invalid', async () => {
+		const css = await run(['@fl-lg/sm:fl-p-4/8']);
+		expect(css).toContain('bp-range-invalid');
+		expect(hasRange(css, 32, 24)).toBe(false);
+	});
+
+	it('the @slot still renders so the utility falls back to engine defaults', async () => {
+		const css = await run(['fl-md/md:fl-p-4/8']);
+		expect(css).toContain('padding: clamp(');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Variant-side error surfacing (review finding 4 remainder).
 // ---------------------------------------------------------------------------
 describe('variant error surfacing', () => {

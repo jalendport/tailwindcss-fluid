@@ -14,29 +14,36 @@ import { resolveTheme } from '../src/theme';
 /** Whitespace-insensitive haystack for matching emitted CSS values. */
 const nows = (s: string) => s.replace(/\s+/g, '');
 
-/** Build the exact runtime clamp formula the emitter produces. */
+/** Stock default range (smallest/largest breakpoint) — the `var()` fallback numbers. */
+const RANGE = { min: 40, max: 96 };
+
+/**
+ * Build the exact runtime clamp formula the emitter produces, including the inline
+ * `var()` fallbacks (M10 §8): `--fl-vw` → `100vw`, `--fl-bp-min`/`--fl-bp-max` → the
+ * stock default range (40 / 96).
+ */
 const clampStr = (lo: string, from: string, slope: string, hi: string, unit = 'rem') =>
-	`clamp(${lo}${unit},calc(${from}${unit}+(${slope})*(var(--fl-vw)-var(--fl-bp-min)*1rem)/(var(--fl-bp-max)-var(--fl-bp-min))),${hi}${unit})`;
+	`clamp(${lo}${unit},calc(${from}${unit}+(${slope})*(var(--fl-vw,100vw)-var(--fl-bp-min,40)*1rem)/(var(--fl-bp-max,96)-var(--fl-bp-min,40))),${hi}${unit})`;
 
 describe('expr.generate (ported v3 math)', () => {
 	it('interpolates an increasing rem range', () => {
-		expect(nows(generate(new Length(1, 'rem'), new Length(2, 'rem')))).toBe(
+		expect(nows(generate(new Length(1, 'rem'), new Length(2, 'rem'), RANGE))).toBe(
 			nows(clampStr('1', '1', '1', '2')),
 		);
 	});
 
 	it('swaps clamp bounds for a decreasing range but keeps direction', () => {
 		// start > end: min/max swap, slope stays negative
-		expect(nows(generate(new Length(2, 'rem'), new Length(1, 'rem')))).toBe(
+		expect(nows(generate(new Length(2, 'rem'), new Length(1, 'rem'), RANGE))).toBe(
 			nows(clampStr('1', '2', '-1', '2')),
 		);
 	});
 
 	it('lets zero adopt the other endpoint unit', () => {
-		expect(nows(generate(new Length(0), new Length(2, 'rem')))).toBe(
+		expect(nows(generate(new Length(0), new Length(2, 'rem'), RANGE))).toBe(
 			nows(clampStr('0', '0', '2', '2')),
 		);
-		expect(nows(generate(new Length(2, 'rem'), new Length(0)))).toBe(
+		expect(nows(generate(new Length(2, 'rem'), new Length(0), RANGE))).toBe(
 			nows(clampStr('0', '2', '-2', '2')),
 		);
 	});
@@ -44,14 +51,24 @@ describe('expr.generate (ported v3 math)', () => {
 	it('folds px endpoints to rem instead of erroring on unit difference', () => {
 		// Per PLAN's unit-policy amendment px is rem-resolvable (folded at 16), so a
 		// rem/px pair interpolates rather than raising mismatched-units.
-		expect(nows(generate(new Length(1, 'rem'), new Length(32, 'px')))).toBe(
+		expect(nows(generate(new Length(1, 'rem'), new Length(32, 'px'), RANGE))).toBe(
 			nows(clampStr('1', '1', '1', '2')),
 		);
 	});
 
+	it('emits the resolved default range as inline var() fallbacks (M10 §8)', () => {
+		// A custom range shows up as the fallback numbers, matching the @property init.
+		const out = nows(
+			generate(new Length(1, 'rem'), new Length(2, 'rem'), { min: 20, max: 80 }),
+		);
+		expect(out).toContain('var(--fl-vw,100vw)');
+		expect(out).toContain('var(--fl-bp-min,20)');
+		expect(out).toContain('var(--fl-bp-max,80)');
+	});
+
 	it('throws unsupported-unit for a non-rem-resolvable (em) endpoint', () => {
 		try {
-			generate(new Length(0.1, 'em'), new Length(0.2, 'em'));
+			generate(new Length(0.1, 'em'), new Length(0.2, 'em'), RANGE);
 			throw new Error('should have thrown');
 		} catch (e) {
 			expect((e as FluidError).code).toBe('unsupported-unit');
@@ -60,7 +77,7 @@ describe('expr.generate (ported v3 math)', () => {
 
 	it('throws no-change when endpoints are equal', () => {
 		try {
-			generate(new Length(1, 'rem'), new Length(1, 'rem'));
+			generate(new Length(1, 'rem'), new Length(1, 'rem'), RANGE);
 			throw new Error('should have thrown');
 		} catch (e) {
 			expect((e as FluidError).code).toBe('no-change');
@@ -69,7 +86,7 @@ describe('expr.generate (ported v3 math)', () => {
 
 	it('throws missing-end when the end value is absent', () => {
 		try {
-			generate(new Length(1, 'rem'), null);
+			generate(new Length(1, 'rem'), null, RANGE);
 			throw new Error('should have thrown');
 		} catch (e) {
 			expect((e as FluidError).code).toBe('missing-end');
@@ -149,6 +166,73 @@ describe('fl-text (font-size tuple interpolation)', () => {
 		expect(css).toContain('mismatched-font-weights');
 		// font-size still interpolates 1rem -> 2rem
 		expect(nows(css)).toContain(nows(clampStr('1', '1', '1', '2')));
+	});
+});
+
+/**
+ * M10 §4 — arbitrary and mixed `fl-text` pairs. These emit a font-size clamp ONLY;
+ * line-height/letter-spacing sub-values interpolate only when BOTH endpoints are
+ * named keys. Unit policy + SC 1.4.4 apply exactly as for named pairs.
+ */
+describe('M10 §4 — arbitrary fl-text pairs (size-only)', () => {
+	/** Body of the first rule whose selector contains `needle`. */
+	const rule = (css: string, needle: string): string => {
+		const i = css.indexOf(needle);
+		if (i === -1) return '';
+		return css.slice(css.indexOf('{', i) + 1, css.indexOf('}', css.indexOf('{', i)));
+	};
+
+	it('fl-text-[1rem]/[2rem] emits a font-size clamp and NO sub-values', async () => {
+		const css = await run(['fl-text-[1rem]/[2rem]']);
+		const body = rule(css, '.fl-text-\\[1rem\\]\\/\\[2rem\\]');
+		expect(nows(body)).toContain(nows(`font-size:${clampStr('1', '1', '1', '2')}`));
+		expect(body).not.toContain('line-height');
+		expect(body).not.toContain('letter-spacing');
+	});
+
+	it('mixed fl-text-sm/[2rem] uses the named start size, size-only', async () => {
+		const body = (await run(['fl-text-sm/[2rem]'])).match(
+			/\.fl-text-sm\\\/\\\[2rem\\\]\s*\{[^}]*\}/,
+		)?.[0];
+		expect(nows(body ?? '')).toContain(
+			nows(`font-size:${clampStr('0.875', '0.875', '1.125', '2')}`),
+		);
+		expect(body).not.toContain('line-height');
+	});
+
+	it('mixed fl-text-[1rem]/xl uses the named end size, size-only', async () => {
+		const css = await run(['fl-text-[1rem]/xl']);
+		const body = rule(css, '.fl-text-\\[1rem\\]\\/xl');
+		// xl = 1.25rem, slope 0.25
+		expect(nows(body)).toContain(nows(`font-size:${clampStr('1', '1', '0.25', '1.25')}`));
+		expect(body).not.toContain('line-height');
+	});
+
+	it('px folds to rem in an arbitrary pair (fl-text-[16px]/[2rem])', async () => {
+		const css = await run(['fl-text-[16px]/[2rem]']);
+		const body = rule(css, '.fl-text-\\[16px\\]\\/\\[2rem\\]');
+		expect(nows(body)).toContain(nows(`font-size:${clampStr('1', '1', '1', '2')}`));
+	});
+
+	it('unit policy applies: a non-rem arbitrary endpoint surfaces unsupported-unit', async () => {
+		const css = await run(['fl-text-[1rem]/[2em]']);
+		expect(css).toContain('--tw-fl-error');
+		expect(css).toContain('unsupported-unit');
+	});
+
+	it('SC 1.4.4 applies exactly: an arbitrary pair too shallow is rejected', async () => {
+		// 0.875rem→3rem over the default 40→96 range fails (the named sm/5xl analogue).
+		const css = await run(['fl-text-[0.875rem]/[3rem]']);
+		expect(css).toContain('fails-sc-144');
+		expect(css).not.toMatch(/font-size:\s*clamp/);
+	});
+
+	it('the same arbitrary pair emits its font-size once SC 1.4.4 is disabled', async () => {
+		const css = await run(['fl-text-[0.875rem]/[3rem]'], {
+			pluginOptions: 'checkSC144: false;',
+		});
+		expect(css).toContain('font-size: clamp(');
+		expect(css).not.toContain('fails-sc-144');
 	});
 });
 
@@ -238,7 +322,99 @@ describe('review finding 1 — unit policy (rem-resolvable only)', () => {
 	});
 
 	it('errors on a non-rem breakpoint option (min-screen in em)', async () => {
-		await expect(run(['fl-p-4/8'], { pluginOptions: 'min-screen: 30em;' })).rejects.toThrow();
+		// M10 §2: a present-but-non-rem option throws a configuration error naming the
+		// option — config is intentional, so a bad unit fails loudly, not silently.
+		await expect(run(['fl-p-4/8'], { pluginOptions: 'min-screen: 30em;' })).rejects.toThrow(
+			/min-screen/,
+		);
+	});
+});
+
+/**
+ * M10 §2 — option validation is consistent: present-but-invalid THROWS (a config
+ * typo must fail the build), absent keeps the theme default.
+ */
+describe('M10 §2 — option consistency', () => {
+	it('throws on unparseable junk (min-screen: bogus), no longer a silent fallback', async () => {
+		await expect(run(['fl-p-4/8'], { pluginOptions: 'min-screen: bogus;' })).rejects.toThrow(
+			/min-screen/,
+		);
+	});
+
+	it('accepts a unitless number as rem (min-screen: 20)', async () => {
+		const css = await run(['fl-p-4/8'], { pluginOptions: 'min-screen: 20;\nmax-screen: 80;' });
+		expect(css).toMatch(/@property --fl-bp-min\s*\{[^}]*initial-value:\s*20/s);
+		expect(css).toMatch(/@property --fl-bp-max\s*\{[^}]*initial-value:\s*80/s);
+	});
+
+	it('accepts a px length option (folded to rem)', async () => {
+		const css = await run(['fl-p-4/8'], { pluginOptions: 'min-screen: 320px;' });
+		expect(css).toMatch(/@property --fl-bp-min\s*\{[^}]*initial-value:\s*20/s);
+	});
+
+	it('throws on an invalid checkSC144 value (checkSC144: nope)', async () => {
+		await expect(run(['fl-p-4/8'], { pluginOptions: 'checkSC144: nope;' })).rejects.toThrow(
+			/checkSC144/,
+		);
+	});
+
+	it('still honors checkSC144: false (the string the block hands through)', async () => {
+		// fl-text-sm/5xl fails SC144 by default; disabling lets its font-size emit.
+		const css = await run(['fl-text-sm/5xl'], { pluginOptions: 'checkSC144: false;' });
+		expect(css).toContain('font-size: clamp(');
+		expect(css).not.toContain('fails-sc-144');
+	});
+});
+
+/**
+ * M10 §1 — the @plugin option range must be strictly increasing (the default range
+ * feeds the interpolation directly). Equal or inverted → throw a config error.
+ */
+describe('M10 §1 — option range validation', () => {
+	it('throws on an equal option range (min-screen == max-screen)', async () => {
+		await expect(
+			run(['fl-p-4/8'], { pluginOptions: 'min-screen: 40rem;\nmax-screen: 40rem;' }),
+		).rejects.toThrow();
+	});
+
+	it('throws on an inverted option range (min-screen > max-screen)', async () => {
+		await expect(
+			run(['fl-p-4/8'], { pluginOptions: 'min-screen: 96rem;\nmax-screen: 40rem;' }),
+		).rejects.toThrow();
+	});
+});
+
+/**
+ * M10 §3 — the error surface is escaped for a CSS string context, so user text
+ * containing `"` / `\` / newlines can't terminate the string early and emit
+ * malformed CSS. `type: ['length','any']` lets a bracketed non-length reach the
+ * handler, so a `"`-bearing arbitrary is a real vector.
+ */
+describe('M10 §3 — error surface escaping', () => {
+	/** Extract the `--tw-fl-error` value (the CSS string) from emitted CSS. */
+	const errorValue = (css: string): string | null => {
+		const m = css.match(/--tw-fl-error:\s*("(?:[^"\\]|\\.)*")/);
+		return m ? m[1]! : null;
+	};
+
+	it('a quote-bearing arbitrary start emits a single well-formed CSS string', async () => {
+		const css = await run(['fl-p-["x"]/4']);
+		const value = errorValue(css);
+		expect(value).not.toBeNull();
+		// It parses cleanly as a single JSON/CSS double-quoted string (the inner `"`
+		// is escaped as `\"`), and carries the error code.
+		const parsed = JSON.parse(value!) as string;
+		expect(parsed).toContain('non-length-start');
+		expect(parsed).toContain('"x"');
+	});
+
+	it('a quote-bearing theme token emits a single well-formed CSS string', async () => {
+		const css = await run(['fl-p-x'], { css: '@theme { --fl-x: 2rem" 4rem; }' });
+		const value = errorValue(css);
+		expect(value).not.toBeNull();
+		const parsed = JSON.parse(value!) as string;
+		expect(parsed).toContain('token-not-pair');
+		expect(parsed).toContain('2rem" 4rem');
 	});
 });
 

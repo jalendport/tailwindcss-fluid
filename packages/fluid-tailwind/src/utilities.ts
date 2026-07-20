@@ -10,7 +10,7 @@
 import type plugin from 'tailwindcss/plugin';
 import { isNegated, Length, unnegate } from './css';
 import { error, errorDecl, FluidError } from './errors';
-import { generate } from './expr';
+import { generate, type DefaultRange } from './expr';
 import { checkFontSizeSC144, type SC144 } from './sc144';
 import type { FluidText, FluidTheme, ScaleName } from './theme';
 
@@ -123,15 +123,17 @@ export function registerRoot(
 	theme: FluidTheme,
 	root: UtilityRoot,
 	sc144: SC144 | null,
+	range: DefaultRange,
 ): void {
-	if (root.kind === 'font-size') registerFontSize(api, theme, root, sc144);
-	else registerLength(api, theme, root);
+	if (root.kind === 'font-size') registerFontSize(api, theme, root, sc144, range);
+	else registerLength(api, theme, root, range);
 }
 
 function registerLength(
 	api: PluginAPI,
 	theme: FluidTheme,
 	{ root, scale = 'spacing', properties = [], emit, type, negative }: UtilityRoot,
+	range: DefaultRange,
 ): void {
 	// Fluid theme tokens (`--fl-*`) join the scale's named values, so `fl-p-gutter`
 	// registers as a candidate. They resolve to their raw pair string; the handler
@@ -177,7 +179,7 @@ function registerLength(
 					if (token) {
 						if (modifier != null) error('token-with-end', value);
 						const [ts, te] = tokenEndpoints(value, token.parts, token.negated);
-						return emitter(generate(ts, te));
+						return emitter(generate(ts, te, range));
 					}
 					// A token can't sit in the end channel (`fl-p-4/gutter`) — but a name
 					// that ALSO names a real scale value resolves to that scale value there
@@ -200,7 +202,7 @@ function registerLength(
 					// parsed sign — a zero start parses to `-0`, and `-0 < 0` is false) and
 					// mirror it onto the end so the whole range is negative.
 					if (isNegated(value)) end = new Length(-Math.abs(end.number), end.unit);
-					return emitter(generate(start, end));
+					return emitter(generate(start, end, range));
 				} catch (e) {
 					return errorDecl(e);
 				}
@@ -223,6 +225,7 @@ function registerFontSize(
 	theme: FluidTheme,
 	{ root }: UtilityRoot,
 	sc144: SC144 | null,
+	range: DefaultRange,
 ): void {
 	// Identity map: the handler receives the theme key so it can pull the full
 	// tuple (size + line-height/letter-spacing/font-weight sub-values). Fluid tokens
@@ -252,7 +255,7 @@ function registerFontSize(
 						const [ts, te] = tokenEndpoints(value, token.parts, token.negated);
 						const rules: Record<string, string> = {};
 						if (sc144) checkFontSizeSC144(ts, te, sc144);
-						rules['font-size'] = generate(ts, te);
+						rules['font-size'] = generate(ts, te, range);
 						return rules;
 					}
 					// Only a token-ONLY end name is rejected; a name that also names a text
@@ -261,11 +264,26 @@ function registerFontSize(
 						error('token-as-end', modifier);
 
 					if (modifier == null) error('missing-end');
-					const from = theme.text[value];
-					if (!from) error('non-length-start', value);
-					const to = theme.text[modifier];
-					if (!to) error('non-length-end', modifier);
-					return fluidText(from, to, sc144);
+
+					// Both endpoints named text keys → full tuple interpolation (M10 §4:
+					// line-height/letter-spacing sub-values interpolate ONLY here).
+					const fromText = theme.text[value];
+					const toText = theme.text[modifier];
+					if (fromText && toText) return fluidText(fromText, toText, sc144, range);
+
+					// Any arbitrary/mixed endpoint (`fl-text-[1rem]/[2rem]`, `fl-text-sm/[2rem]`,
+					// `fl-text-[1rem]/xl`) → font-size clamp ONLY, no sub-values (M10 §4). A
+					// named endpoint contributes its `fontSize`; an arbitrary one its parsed
+					// length (unit policy + SC 1.4.4 apply exactly as for named pairs — the
+					// numbers are statically known, so the check is exact).
+					const fromSize = fromText ? fromText.fontSize : Length.parse(value);
+					if (!fromSize) error('non-length-start', value);
+					const toSize = toText ? toText.fontSize : Length.parse(modifier);
+					if (!toSize) error('non-length-end', modifier);
+					const rules: Record<string, string> = {};
+					if (sc144) checkFontSizeSC144(fromSize, toSize, sc144);
+					rules['font-size'] = generate(fromSize, toSize, range);
+					return rules;
 				} catch (e) {
 					return errorDecl(e);
 				}
@@ -274,13 +292,21 @@ function registerFontSize(
 		{
 			values,
 			modifiers: 'any',
-			type: ['absolute-size', 'relative-size', 'length', 'percentage'],
+			// `'any'` alongside the size types so an uppercase-unit arbitrary length
+			// (`[16PX]`) survives Tailwind's case-sensitive length inference (finding 6),
+			// matching the length root; our own `Length.parse` then folds the unit.
+			type: ['absolute-size', 'relative-size', 'length', 'percentage', 'any'],
 		},
 	);
 }
 
 /** Build the font-size rule set: interpolate the size + each differing sub-value. */
-function fluidText(from: FluidText, to: FluidText, sc144: SC144 | null): Record<string, string> {
+function fluidText(
+	from: FluidText,
+	to: FluidText,
+	sc144: SC144 | null,
+	range: DefaultRange,
+): Record<string, string> {
 	const rules: Record<string, string> = {};
 
 	// Font size always interpolates. When the WCAG 1.4.4 check is enabled it runs
@@ -290,7 +316,7 @@ function fluidText(from: FluidText, to: FluidText, sc144: SC144 | null): Record<
 	// exactly as v3 did (only the `type: true` font-size call is gated).
 	try {
 		if (sc144) checkFontSizeSC144(from.fontSize, to.fontSize, sc144);
-		rules['font-size'] = generate(from.fontSize, to.fontSize);
+		rules['font-size'] = generate(from.fontSize, to.fontSize, range);
 	} catch (e) {
 		Object.assign(rules, errorDecl(e));
 	}
@@ -302,6 +328,7 @@ function fluidText(from: FluidText, to: FluidText, sc144: SC144 | null): Record<
 		to.raw.lineHeight,
 		from.lineHeight,
 		to.lineHeight,
+		range,
 	);
 	interpolateSub(
 		rules,
@@ -310,6 +337,7 @@ function fluidText(from: FluidText, to: FluidText, sc144: SC144 | null): Record<
 		to.raw.letterSpacing,
 		from.letterSpacing,
 		to.letterSpacing,
+		range,
 	);
 
 	// Font weight is compared, not interpolated (matches v3).
@@ -334,6 +362,7 @@ function interpolateSub(
 	toRaw: string | undefined,
 	fromLen: Length | undefined,
 	toLen: Length | undefined,
+	range: DefaultRange,
 ): void {
 	if ((fromRaw ?? null) === (toRaw ?? null)) {
 		if (fromRaw != null) rules[prop] = fromRaw;
@@ -343,7 +372,7 @@ function interpolateSub(
 		if (!fromLen && !toLen) return;
 		if (!fromLen) error('missing-start');
 		if (!toLen) error('missing-end');
-		rules[prop] = generate(fromLen, toLen);
+		rules[prop] = generate(fromLen, toLen, range);
 	} catch (e) {
 		Object.assign(rules, errorDecl(e));
 	}
