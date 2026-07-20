@@ -135,6 +135,17 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
 
+      # Publish hygiene (M10 §6) — built-artifact smoke test + publint + attw. A tag
+      # doesn't get to publish a broken exports map or a build missing its exports.
+      - run: pnpm check:dist
+      - run: pnpm check:publish
+
+      # Playground e2e + language-server gates (M10 §6): the runtime clamp math and
+      # IntelliSense are proven before publish, not just in the manual/CI path.
+      - run: npx playwright install --with-deps chromium
+      - run: pnpm --filter playground test:e2e
+      - run: pnpm --filter playground test:ls
+
       # Pack the npm tarball from the built package (respects the manifest `files`).
       - name: Pack the npm tarball
         id: pack

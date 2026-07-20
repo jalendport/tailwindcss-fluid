@@ -24,3 +24,28 @@ jobs:
       - run: pnpm build
       - run: pnpm lint
       - run: pnpm test
+      # Publish hygiene (M10 §6): the built-artifact smoke test proves the emitted
+      # dist actually exports the plugin + withFluid; publint + attw check the package
+      # `exports` map and its `.d.mts` types resolution — none of which the source-only
+      # unit suite exercises.
+      - run: pnpm check:dist
+      - run: pnpm check:publish
+
+  # Playground e2e + language-server checks (M10 §6): the only gates that prove the
+  # runtime clamp math and IntelliSense end-to-end, in a real browser and a real LS.
+  # Runs in parallel with `build` (own install; pnpm cache keeps it cheap).
+  playground:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The plugin's built dist is what the playground consumes (workspace:*).
+      - run: pnpm build
+      - run: npx playwright install --with-deps chromium
+      - run: pnpm --filter playground test:e2e
+      - run: pnpm --filter playground test:ls

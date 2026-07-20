@@ -41,4 +41,11 @@ export default tseslint.config(
 		files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
 		extends: [tseslint.configs.disableTypeChecked],
 	},
+	{
+		// Root build/publish helper scripts run under Node (CI + prepack).
+		files: ['scripts/**/*.mjs'],
+		languageOptions: {
+			globals: { console: 'readonly', process: 'readonly' },
+		},
+	},
 );

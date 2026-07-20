@@ -191,11 +191,24 @@ try {
 	console.log('variant stubs offered after `fl-`:', variantStubs.slice(0, 20));
 	console.log('hover over fl-text-sm/xl:', hoverText.slice(0, 400));
 
-	const utilOk = flTextItems.length > 0;
-	const hoverOk = /clamp|font-size/.test(hoverText);
-	console.log('\nRESULT util-completions:', utilOk ? 'PASS' : 'FAIL');
-	console.log('RESULT hover-css:', hoverOk ? 'PASS' : 'FAIL');
-	process.exitCode = utilOk ? 0 : 1;
+	// Every check gates the exit code — a regression in hover, variant completions,
+	// container completions, or the variant stubs must fail CI, not just the utility
+	// completions (M10 §6; previously only `utilOk` was checked).
+	const checks = {
+		'util-completions': flTextItems.length > 0,
+		'hover-css': /clamp|font-size/.test(hoverText),
+		'variant-completions': flVariantItems.length > 0,
+		'container-completions': containerVariantLabels.some((l) => l.startsWith('fl')),
+		'variant-stubs': variantStubs.length > 0,
+	};
+
+	console.log('');
+	let allOk = true;
+	for (const [name, ok] of Object.entries(checks)) {
+		if (!ok) allOk = false;
+		console.log(`RESULT ${name}:`, ok ? 'PASS' : 'FAIL');
+	}
+	process.exitCode = allOk ? 0 : 1;
 } finally {
 	server.kill();
 }
