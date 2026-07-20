@@ -1,6 +1,7 @@
 # Local planning docs — never commit these
 PLAN.md
 .briefs/
+agents/
 
 # Dependencies
 node_modules/
