@@ -183,10 +183,37 @@ describe('the gate encodes the plugin surface, not just core (M7 fix 1)', () => 
 		expect(tw('widget-a fl-widget-a/b')).toBe('widget-a fl-widget-a/b');
 	});
 
-	it('an arbitrary fl-text pair never groups, even with the SC check off', () => {
-		// The plugin supports no arbitrary font-size pair at all.
-		expect(twMergeNoSC144('text-lg fl-text-[1rem]/[2rem]')).toBe(
-			'text-lg fl-text-[1rem]/[2rem]',
+	it('a valid arbitrary fl-text pair GROUPS (M10 §4 — size-only, now supported)', () => {
+		// `fl-text-[1rem]/[2rem]` emits a size-only font-size clamp (passes SC 1.4.4),
+		// so it sets font-size and merges with a real `text-lg`.
+		expect(twMerge('text-lg fl-text-[1rem]/[2rem]')).toBe('fl-text-[1rem]/[2rem]');
+	});
+
+	it('a mixed fl-text pair GROUPS (named start, arbitrary end)', () => {
+		expect(twMerge('text-lg fl-text-sm/[2rem]')).toBe('fl-text-sm/[2rem]');
+		expect(twMerge('text-lg fl-text-[1rem]/xl')).toBe('fl-text-[1rem]/xl');
+	});
+
+	it('an arbitrary fl-text pair that FAILS SC 1.4.4 stays ungrouped (both kept)', () => {
+		// 0.875rem→3rem over 40→96 fails the zoom check → the plugin emits no font-size.
+		expect(twMerge('text-lg fl-text-[0.875rem]/[3rem]')).toBe(
+			'text-lg fl-text-[0.875rem]/[3rem]',
+		);
+		// …and groups once the check is disabled.
+		expect(twMergeNoSC144('text-lg fl-text-[0.875rem]/[3rem]')).toBe(
+			'fl-text-[0.875rem]/[3rem]',
+		);
+	});
+
+	it('a non-foldable arbitrary fl-text endpoint stays ungrouped (both kept)', () => {
+		// `[1em]` raises unsupported-unit → no font-size emitted.
+		expect(twMerge('text-lg fl-text-[1rem]/[1em]')).toBe('text-lg fl-text-[1rem]/[1em]');
+	});
+
+	it('a no-change arbitrary fl-text pair stays ungrouped (both kept)', () => {
+		// Folded equal (1rem == 16px) → the plugin emits no-change, no font-size.
+		expect(twMergeNoSC144('text-lg fl-text-[1rem]/[16px]')).toBe(
+			'text-lg fl-text-[1rem]/[16px]',
 		);
 	});
 });
@@ -215,6 +242,35 @@ describe('prefix-configured cross-merging (M7 fix 1)', () => {
 
 	it('prefixed fluid utilities still merge last-wins among themselves', () => {
 		expect(twMergePrefixed('tw:fl-p-4/8 tw:fl-p-2/6')).toBe('tw:fl-p-2/6');
+	});
+});
+
+describe('negative arbitrary starts parse correctly (M10 §5)', () => {
+	it('two fl-mt negative-arbitrary pairs merge last-wins', () => {
+		// The dash inside `[-1rem]` used to mis-slice the root (lastIndexOf('-')), so
+		// these stayed ungrouped; longest-prefix root matching now parses root `mt`.
+		expect(twMerge('fl-mt-[-1rem]/[2rem] fl-mt-2/4')).toBe('fl-mt-2/4');
+	});
+
+	it('a negative-arbitrary fluid mt merges with a core mt (last wins)', () => {
+		expect(twMerge('mt-8 fl-mt-[-1rem]/[2rem]')).toBe('fl-mt-[-1rem]/[2rem]');
+		expect(twMerge('fl-mt-[-1rem]/[2rem] mt-8')).toBe('mt-8');
+	});
+
+	it('-m-4 fl-mt-[-1rem]/[2rem] keeps both (mt refines m, as advertised)', () => {
+		// mt is a narrower group than m, so tailwind-merge keeps both — proving the
+		// fluid class is correctly grouped as `mt`, not deleted or mis-rooted.
+		expect(twMerge('-m-4 fl-mt-[-1rem]/[2rem]')).toBe('-m-4 fl-mt-[-1rem]/[2rem]');
+	});
+
+	it('longest-root matching survives a multi-segment root (scroll-m)', () => {
+		expect(twMerge('fl-scroll-m-[-1rem]/[2rem] fl-scroll-m-2/4')).toBe('fl-scroll-m-2/4');
+	});
+
+	it('junk is still conservative — an unknown root stays ungrouped', () => {
+		expect(twMerge('opacity-25 fl-opacity-[-1rem]/[2rem]')).toBe(
+			'opacity-25 fl-opacity-[-1rem]/[2rem]',
+		);
 	});
 });
 

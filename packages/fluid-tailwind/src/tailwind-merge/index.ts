@@ -33,11 +33,12 @@
 //     core's — a pair is grouped only when every check below passes (see
 //     `canGroup`): the root is on the plugin's static allowlist (`FLUID_ROOTS`,
 //     derived from the real `ROOTS`); the endpoints aren't identical (`no-change`);
-//     any arbitrary endpoint folds to a literal rem/px length; `fl-text` isn't an
-//     unsupported arbitrary form and a named `fl-text` pair passes SC 1.4.4 for the
-//     configured range/scale; and BOTH channels are real classes in one core group
-//     (a probe merge). Anything unproven is left ungrouped → it merges with nothing
-//     and deletes nothing.
+//     any arbitrary endpoint folds to a literal rem/px length; a `fl-text` pair
+//     (named, arbitrary, or mixed — arbitrary `fl-text` pairs are size-only and
+//     groupable as of M10 §4) resolves both endpoints to differing rem sizes that
+//     pass SC 1.4.4 for the configured range/scale; and BOTH channels are real
+//     classes in one core group (a probe merge). Anything unproven is left ungrouped
+//     → it merges with nothing and deletes nothing.
 //
 //  2. RANGE VARIANTS ARE ORDER-SENSITIVE. `hover:fl-md/lg:…` scopes the range to
 //     hover; `fl-md/lg:hover:…` installs it unconditionally — they are NOT
@@ -62,6 +63,42 @@ import { remNumber } from '../theme';
  * the plugin, so no generated copy and no sync test are needed.
  */
 const FLUID_ROOTS: ReadonlySet<string> = new Set(ROOTS.map((r) => r.root.replace(/^fl-/, '')));
+
+/**
+ * The same roots, longest-first, for prefix matching. Root extraction can't split on
+ * `-` (M10 §5): a negative arbitrary start like `fl-mt-[-1rem]/[2rem]` carries a dash
+ * INSIDE the bracket, so `lastIndexOf('-')` mis-slices the root. Matching the known
+ * roots as prefixes (longest wins, so `scroll-m` beats a hypothetical `scroll`,
+ * `inset-x` beats `inset`) extracts the root without touching the value at all.
+ */
+const FLUID_ROOTS_BY_LENGTH: readonly string[] = [...FLUID_ROOTS].sort(
+	(a, b) => b.length - a.length,
+);
+
+/** The longest known fluid root that prefixes `rest` (`mt` in `mt-[-1rem]/[2rem]`), or null. */
+function matchRoot(rest: string): string | null {
+	for (const root of FLUID_ROOTS_BY_LENGTH) {
+		if (rest === root || rest.startsWith(root + '-')) return root;
+	}
+	return null;
+}
+
+/**
+ * Split a class body into its start value and (optional) `/end` at the top-level
+ * slash — the one OUTSIDE any `[…]` arbitrary value. A bracket-depth scan keeps a
+ * hypothetical slash inside an arbitrary length from being mistaken for the pair
+ * separator. Returns `[start, null]` when there's no top-level slash (a token form).
+ */
+function splitPair(body: string): [string, string | null] {
+	let depth = 0;
+	for (let i = 0; i < body.length; i++) {
+		const c = body[i];
+		if (c === '[') depth++;
+		else if (c === ']') depth--;
+		else if (c === '/' && depth === 0) return [body.slice(0, i), body.slice(i + 1)];
+	}
+	return [body, null];
+}
 
 // Tailwind v4's default `--text-*` scale (rem). The plugin reads this from the live
 // theme at build time, so there's no static export to import; this is a standalone
@@ -197,26 +234,27 @@ function analyzeFluid(baseClassName: string): FluidAnalysis | null {
 	const m = FLUID_BASE.exec(baseClassName);
 	if (!m) return null;
 	const neg = m[1]!;
-	const rest = m[2]!;
-	const slash = rest.lastIndexOf('/');
+	const rest = m[2]!; // `p-4`, `text-sm/xl`, `mt-[-1rem]/[2rem]`
 
-	if (slash === -1) {
-		// No end channel: a token form (`fl-p-gutter`). Left ungrouped.
-		const lastDash = rest.lastIndexOf('-');
-		return {
-			startCore: neg + rest,
-			endCore: null,
-			root: lastDash === -1 ? rest : rest.slice(0, lastDash),
-			startValue: lastDash === -1 ? rest : rest.slice(lastDash + 1),
-			endValue: null,
-		};
+	// Extract the root by longest known-prefix match, not by splitting on `-` — a
+	// negative arbitrary start (`mt-[-1rem]`) has a dash inside its bracket (§5). An
+	// unknown root (`widget-a/b`, `opacity-50/75`) matches nothing → left ungrouped.
+	const root = matchRoot(rest);
+	if (!root) return null;
+
+	// Everything after `root-` is the value body: `value` or `value/end`.
+	const body = rest === root ? '' : rest.slice(root.length + 1);
+	const [startValue, endValue] = splitPair(body);
+
+	if (endValue === null) {
+		// No end channel: a token form (`fl-p-gutter`) or a bare root. Left ungrouped.
+		return { startCore: neg + rest, endCore: null, root, startValue, endValue: null };
 	}
 
-	const startPart = rest.slice(0, slash); // `p-4`, `text-sm`, `p-[1rem]`
-	const endValue = rest.slice(slash + 1); // `8`, `5xl`, `[2rem]`
-	const lastDash = startPart.lastIndexOf('-');
-	const root = lastDash === -1 ? startPart : startPart.slice(0, lastDash);
-	const startValue = lastDash === -1 ? startPart : startPart.slice(lastDash + 1);
+	// `startCore` is the root with the start value (`p-4`, `mt-[-1rem]`); `endCore`
+	// the root with the end value (`p-8`, `mt-[2rem]`) — the probe checks both are one
+	// core group. The start portion is `rest` minus the trailing `/end`.
+	const startPart = rest.slice(0, rest.length - endValue.length - 1);
 	return {
 		startCore: neg + startPart,
 		endCore: neg + root + '-' + endValue,
@@ -298,6 +336,16 @@ export function withFluid<
 	}) as Config<ClassGroupIds, ThemeGroupIds>;
 
 	/**
+	 * Resolve a `fl-text` endpoint value to a rem font-size number for the no-change +
+	 * SC 1.4.4 gates: a named size via the (optionally custom) text scale, an arbitrary
+	 * `[…]` endpoint by folding its bracketed length. Undefined = unknown/non-foldable.
+	 */
+	function textSize(value: string): number | undefined {
+		if (isArbitrary(value)) return foldLength(value.slice(1, -1)) ?? undefined;
+		return textScale[value];
+	}
+
+	/**
 	 * Whether this fluid pair is safe to cross-merge — i.e. the plugin PROVABLY emits
 	 * its advertised core property for it. Each gate below mirrors a way the plugin
 	 * emits nothing (only a `--tw-fl-error`), which grouping would silently turn into
@@ -330,28 +378,29 @@ export function withFluid<
 			return false;
 		}
 
-		// 3. `fl-text` arbitrary forms. The plugin supports no arbitrary font-size pair
-		//    (`fl-text-[1rem]/[2rem]` resolves neither endpoint to a text key, so no
-		//    font-size is emitted) — never group, regardless of the SC 1.4.4 gate.
-		if (a.root === 'text' && (startArb || endArb)) return false;
-
-		// 4. Arbitrary endpoints must fold to a literal rem/px length (or unit-free
+		// 3. Arbitrary endpoints must fold to a literal rem/px length (or unit-free
 		//    zero). `[1em]`, `[url(x)]`, and junk raise `unsupported-unit`/`non-length`
 		//    and emit no property; mixed px/rem folds and is fine.
 		if (startArb && !isFoldableLength(a.startValue.slice(1, -1))) return false;
 		if (endArb && !isFoldableLength(endValue.slice(1, -1))) return false;
 
-		// 5. `fl-text` SC 1.4.4. The plugin emits NO font-size when a named pair fails
-		//    the zoom-safety check, so a failing pair must not displace a real
-		//    font-size. Evaluated against the (optionally custom) text scale + range.
-		if (checkSC144 && a.root === 'text') {
-			const start = textScale[a.startValue];
-			const end = textScale[endValue];
+		// 4. `fl-text` pairs. A pair groups only when the plugin actually emits a
+		//    font-size: both endpoints resolve to a rem size, they differ, and (when
+		//    enabled) the pair passes the EXACT SC 1.4.4 check. Named endpoints resolve
+		//    via the (optionally custom) text scale; arbitrary/mixed endpoints fold their
+		//    bracketed length — M10 §4 made arbitrary `fl-text` pairs size-only and
+		//    groupable. A no-change pair (folded start == end, incl. a named/arb mix like
+		//    `fl-text-sm/[0.875rem]`) or an unknown/non-foldable endpoint emits nothing,
+		//    so it stays ungrouped.
+		if (a.root === 'text') {
+			const start = textSize(a.startValue);
+			const end = textSize(endValue);
 			if (start === undefined || end === undefined) return false;
-			if (!passesSC144(start, end, minScreen, maxScreen)) return false;
+			if (start === end) return false;
+			if (checkSC144 && !passesSC144(start, end, minScreen, maxScreen)) return false;
 		}
 
-		// 6. Both channels must be real classes in the same core conflict group.
+		// 5. Both channels must be real classes in the same core conflict group.
 		return probeMergesToOne(a.startCore, a.endCore!);
 	}
 }
