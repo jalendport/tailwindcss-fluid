@@ -41,7 +41,7 @@
 	"files": [
 		"dist",
 		"README.md",
-		"LICENSE"
+		"LICENSE.md"
 	],
 	"scripts": {
 		"build": "tsdown",
